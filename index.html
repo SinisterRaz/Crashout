@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>ASYLUM — Combat Test</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:monospace;color:#9fb}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #view{image-rendering:pixelated;width:100vw;height:100vh;object-fit:contain;background:#000;cursor:crosshair}
+  #hud{position:fixed;left:0;right:0;bottom:0;padding:6px 10px;font-size:13px;pointer-events:none;
+       display:flex;justify-content:space-between;text-shadow:0 1px 2px #000;
+       background:linear-gradient(to top,rgba(0,0,0,.7),transparent)}
+  #hud .hp{color:#e44}#hud .ammo{color:#fd8}
+  #reticle{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;pointer-events:none;
+           border:1px solid #9fb;border-radius:50%;box-shadow:0 0 3px #000;opacity:.8}
+  #msg{position:fixed;left:50%;top:20%;transform:translateX(-50%);font-size:20px;color:#fdd;
+       text-shadow:0 2px 6px #000;pointer-events:none;opacity:0;transition:opacity .25s;letter-spacing:2px}
+  #quip{position:fixed;left:50%;bottom:14%;transform:translateX(-50%);font-size:15px;color:#ffd27a;
+       text-shadow:0 2px 4px #000;pointer-events:none;opacity:0;transition:opacity .2s;font-style:italic;letter-spacing:1px}
+  #flash{position:fixed;inset:0;background:#e22;opacity:0;pointer-events:none}
+  .card{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+       background:radial-gradient(ellipse at center,rgba(20,6,8,.92),rgba(0,0,0,.97));z-index:5;text-align:center}
+  .cardwrap{max-width:80%}
+  .card h1{color:#c33;letter-spacing:6px;margin:0 0 4px;font-size:34px;text-shadow:0 0 20px #500}
+  .card h2{color:#7a8;letter-spacing:8px;margin:0 0 26px;font-size:15px;font-weight:normal}
+  .card .story{margin:8px 0;color:#cbd;font-size:16px;line-height:1.5;letter-spacing:1px}
+  .card .story.dim{color:#667;font-style:italic}
+  .card .ctl{margin:4px 0;color:#566;font-size:12px;letter-spacing:1px}
+  .card button{margin-top:26px;padding:12px 34px;background:#2a0e12;color:#fbb;border:1px solid #944;
+              font-family:monospace;font-size:16px;letter-spacing:3px;cursor:pointer}
+  .card button:hover{background:#3a1218}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="view" width="480" height="270"></canvas></div>
+<div id="reticle"></div>
+<div id="flash"></div>
+<div id="msg"></div>
+<div id="quip"></div>
+<div id="hud"><span>HP <span class="hp" id="hp">100</span></span>
+  <span id="objective">FIND THE KEYS</span>
+  <span>KEYS <span class="ammo" id="keys">0/2</span></span></div>
+
+<!-- story cards: intro sells the frame-job; end card seeds the truth -->
+<div id="tap" class="card">
+  <div class="cardwrap">
+    <h1>JOHN FALCON</h1>
+    <h2>BLACKHILLS ASYLUM</h2>
+    <p class="story">They locked me in Blackhills and called me crazy.</p>
+    <p class="story">They're wrong. I don't belong in here — and I'm not staying.</p>
+    <p class="story dim">Then the power died, and the patients came off their leashes...</p>
+    <p class="ctl">WASD move · mouse / Q-E turn · click or SPACE = shoot</p>
+    <p class="ctl">Find both keys. Get to the exit. Get out.</p>
+    <button id="go">BREAK OUT</button>
+  </div>
+</div>
+
+<div id="endcard" class="card" style="display:none">
+  <div class="cardwrap">
+    <h1 id="endtitle">FLOOR 1 CLEAR</h1>
+    <p class="story" id="endline1">One way out of this place: down.</p>
+    <p class="story dim" id="endline2"></p>
+    <button id="descend">DESCEND</button>
+  </div>
+</div>
+
+<div id="deathcard" class="card" style="display:none">
+  <div class="cardwrap">
+    <h1 style="color:#a11">YOU DIED</h1>
+    <p class="story" id="deathline">Blackhills keeps another one.</p>
+    <button id="retry">TRY AGAIN</button>
+  </div>
+</div>
+<script>
+"use strict";
+/* One-room combat test: rabid Patient vs pistol.
+   Same renderer conventions as asylum.html (DDA walls, cast floor/ceiling,
+   fog, directional shade, procedural textures, torch light, e.key input).
+   Adds: billboard enemy w/ z-buffer occlusion, a rabid state machine, and a
+   hitscan pistol with the damage model. Zero assets, single file, CEF-safe. */
+
+// ---- a small sealed room (16x12). # wall, . floor, S start, T tile accent ----
+const MAP=[
+"############################",
+"#........#........#........#",
+"#...K....#........#....E....#",
+"#...TT...D........D....##...#",
+"#...TT...#........#........#",
+"#........#........#........#",
+"####D#########D#########D####",
+"#........#........#........#",
+"#........#........#........#",
+"#...S....D........#........#",
+"#........#........D........#",
+"####D#########D####....##...#",
+"#........#........#....##...#",
+"#........#........#........#",
+"#........D........D........#",
+"#........#........#........#",
+"####D#########D#########D####",
+"#........#........#........#",
+"#......K.#........#........#",
+"############################"];
+const MH=MAP.length, MW=MAP[0].length;
+const grid=[], meta={start:[3.5,7.5], keys:[], exit:null};
+for(let y=0;y<MH;y++){const r=[];for(let x=0;x<MW;x++){const ch=MAP[y][x];
+  if(ch==='#')r.push(1); else if(ch==='T')r.push(4); else {r.push(0);
+    if(ch==='S')meta.start=[x+0.5,y+0.5];
+    if(ch==='K')meta.keys.push([x+0.5,y+0.5]);
+    if(ch==='E')meta.exit=[x+0.5,y+0.5];}}
+  grid.push(r);}
+const keysGot=meta.keys.map(()=>false); let keyCount=0;
+
+// ---- procedural textures (same method as the main engine) ----
+function makeTex(kind){const S=64,data=new Uint8ClampedArray(S*S*3);
+  const put=(x,y,r,g,b)=>{const i=(y*S+x)*3;data[i]=r;data[i+1]=g;data[i+2]=b;};
+  let s=kind.length*97+3;const R=()=>((s=(s*1103515245+12345)&0x7fffffff)/0x7fffffff);
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){let r,g,b;
+    if(kind==='plaster'){const base=130+(R()*24-12);r=base*.72;g=base*.86;b=base*.66;
+      if(R()<.06){r*=.5;g*=.5;b*=.45;}const cr=Math.sin(x*.5+y*.2)+Math.sin(y*.6);if(cr>1.7){r*=.55;g*=.55;b*=.5;}}
+    else if(kind==='tile'){const gx=x%16,gy=y%16,grout=(gx<2||gy<2);const base=grout?55:155+(R()*22-11);
+      r=base*.8;g=base*.9;b=base*.88;if(!grout&&R()<.04){r*=.6;g*=.6;b*=.6;}}
+    else{const base=90+(R()*24-12);r=g=b=base;}
+    put(x,y,r,g,b);}
+  return {w:S,h:S,data};}
+const TEX={1:makeTex('plaster'),4:makeTex('tile')};
+
+// ---- lights ----
+// Sparse, dim lights — most of the arena is dark so patients lurk unseen.
+const LIGHTS=[
+  {x:4.5,y:9.5,r:4,i:0.9},     // a little light near the start
+  {x:13,y:3,r:3.5,i:0.8},
+  {x:22,y:8,r:3.5,i:0.7},
+  {x:13,y:13,r:3.5,i:0.75},
+  {x:22,y:17,r:3,i:0.7}
+];
+
+// ---- player ----
+const P={x:meta.start[0],y:meta.start[1],a:0,hp:100};
+let dead=false, won=false;
+
+// ---- the Patient (rabid) ----
+function makePatient(x,y){return {x,y,hp:30,mass:0.4,state:'dormant',t:0,facing:0,dmg:0,
+  spd:0, hitFlash:0, staggerT:0,
+  lkx:0, lky:0,          // last-known player position (for SEARCH)
+  searchT:0,             // how long we've been searching
+  confirm:0,             // sight-confirmation buildup (Isolation: needs a beat)
+  wanderA:Math.random()*6.28 };}
+// 10 patients scattered through the far rooms, away from the start (4,9)
+const enemies=[
+  makePatient(13.5,2.5), makePatient(22.5,2.5), makePatient(24.5,3.5),
+  makePatient(21.5,8.5), makePatient(13.5,9.5), makePatient(25.5,10.5),
+  makePatient(13.5,13.5), makePatient(22.5,13.5), makePatient(13.5,17.5),
+  makePatient(23.5,17.5)
+];
+let killCount=0; const totalEnemies=enemies.length;
+const RABID={ sightRange:10, wakeTelegraph:0.35, chaseSpeed:2.7, searchSpeed:1.5,
+  attackRange:0.9, attackWind:0.3, attackDmg:14, attackCooldown:0.8, giveUp:6 };
+
+// ---- pistol ----
+const PISTOL={ dmg:16, cooldown:0.32, range:20, spreadFalloff:false };
+let fireCd=0, muzzle=0;
+
+const cv=document.getElementById('view'), ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height,FOV=Math.PI/3;
+const img=ctx.createImageData(W,H), px32=new Uint32Array(img.data.buffer);
+const zbuf=new Float32Array(W);      // per-column wall distance, for sprite occlusion
+let T=0;
+const FOGCOL=[10,13,11];   // shared so enemy shading fogs to the same colour as the world
+
+function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
+  if(d2>lt.r*lt.r)continue;const fall=1-Math.sqrt(d2)/lt.r;
+  const fl=.85+.15*Math.sin(T*11+lt.x*3.1);L+=fall*fall*lt.i*fl;}return L>1.4?1.4:L;}
+
+function solid(x,y){const c=(x>=0&&y>=0&&x<MW&&y<MH)?grid[y|0][x|0]:1;return c>=1;}
+
+// line of sight between two points (DDA, stops at wall)
+function los(ax,ay,bx,by){const dx=bx-ax,dy=by-ay,d=Math.hypot(dx,dy),steps=(d/0.1)|0;
+  for(let i=1;i<steps;i++){const t=i/steps;if(solid(ax+dx*t,ay+dy*t))return false;}return true;}
+
+// ---- world render (walls + floor/ceiling + fog + light) ----
+function render(){
+  const FOG=FOGCOL,fogStart=2,fogEnd=11,ceil=[16,18,20],floor=[26,22,18];
+  const halfH=H/2, caL=P.a-FOV/2,caR=P.a+FOV/2;
+  const clx=Math.cos(caL),cly=Math.sin(caL),crx=Math.cos(caR),cry=Math.sin(caR);
+  for(let y=(halfH+1)|0;y<H;y++){const p=y-halfH,rowDist=(0.5*H)/p;
+    const flx=P.x+clx*rowDist,fly=P.y+cly*rowDist,frx=P.x+crx*rowDist,fry=P.y+cry*rowDist;
+    const stepX=(frx-flx)/W,stepY=(fry-fly)/W;let wx=flx,wy=fly;const yc=(H-1)-y;
+    let fg=(rowDist-fogStart)/(fogEnd-fogStart);fg=fg<0?0:fg>1?1:fg;
+    for(let x=0;x<W;x++){const chk=(((wx|0)+(wy|0))&1),lit=lightAt(wx,wy);const fl=0.55+0.85*lit;
+      let fr=floor[0]*(chk?1:.82)*fl,fgc=floor[1]*(chk?1:.82)*fl,fb=floor[2]*(chk?1:.82)*fl;
+      // blood pools: darken toward red within pool radius
+      if(floorBlood.length){ let bl=0;
+        for(const bp of floorBlood){const ddx=wx-bp.x,ddy=wy-bp.y,d2=ddx*ddx+ddy*ddy;
+          if(d2<bp.r*bp.r){ bl=Math.max(bl, 1-Math.sqrt(d2)/bp.r); } }
+        if(bl>0){ const a=Math.min(0.92,bl*1.1);
+          fr=fr*(1-a)+70*a; fgc=fgc*(1-a)+6*a; fb=fb*(1-a)+8*a; } }
+      fr+=(FOG[0]-fr)*fg;fgc+=(FOG[1]-fgc)*fg;fb+=(FOG[2]-fb)*fg;
+      px32[y*W+x]=(255<<24)|((fb|0)<<16)|((fgc|0)<<8)|(fr|0);
+      const cl=0.6+0.5*lit;let cr=ceil[0]*.9*cl,cg=ceil[1]*.9*cl,cb=ceil[2]*.9*cl;
+      cr+=(FOG[0]-cr)*fg;cg+=(FOG[1]-cg)*fg;cb+=(FOG[2]-cb)*fg;
+      if(yc>=0&&yc<halfH)px32[yc*W+x]=(255<<24)|((cb|0)<<16)|((cg|0)<<8)|(cr|0);
+      wx+=stepX;wy+=stepY;}}
+  for(let col=0;col<W;col++){const ca=P.a-FOV/2+FOV*(col/W),rdx=Math.cos(ca),rdy=Math.sin(ca);
+    let mx=P.x|0,my=P.y|0;const ddx=Math.abs(1/rdx),ddy=Math.abs(1/rdy);let sx,sy,sdx,sdy;
+    if(rdx<0){sx=-1;sdx=(P.x-mx)*ddx;}else{sx=1;sdx=(mx+1-P.x)*ddx;}
+    if(rdy<0){sy=-1;sdy=(P.y-my)*ddy;}else{sy=1;sdy=(my+1-P.y)*ddy;}
+    let side=0,hit=0,g=0,cell=0;
+    while(!hit&&g++<128){if(sdx<sdy){sdx+=ddx;mx+=sx;side=0;}else{sdy+=ddy;my+=sy;side=1;}
+      if(mx<0||my<0||mx>=MW||my>=MH){hit=2;break;}cell=grid[my][mx];if(cell>=1)hit=1;}
+    if(hit!==1){zbuf[col]=1e9;continue;}
+    const dist=side===0?(sdx-ddx):(sdy-ddy),corr=Math.max(0.02,dist*Math.cos(ca-P.a));zbuf[col]=corr;
+    const hx=P.x+rdx*dist,hy=P.y+rdy*dist,lh=Math.min(H*6,(H/corr)|0);
+    const y0=((H-lh)/2)|0,y1=((H+lh)/2)|0;let wallX=side===0?hy:hx;wallX-=Math.floor(wallX);
+    const tex=TEX[cell]||TEX[1];let tu=(wallX*64)|0;if(tu>63)tu=63;
+    const lit=lightAt(hx,hy),dir=side===1?0.68:1.0;let fg=(corr-fogStart)/(fogEnd-fogStart);fg=fg<0?0:fg>1?1:fg;
+    const bloodSeed = wallBlood[mx+','+my+','+side];       // splatter on this wall face?
+    for(let y=Math.max(0,y0);y<Math.min(H,y1);y++){const v=((y-y0)/lh*64)|0,tv=v<0?0:v>63?63:v,ti=(tv*64+tu)*3;
+      let r=tex.data[ti],gg=tex.data[ti+1],b=tex.data[ti+2];const l=dir*(0.55+0.8*lit);r*=l;gg*=l;b*=l;
+      // wall blood: heaviest low on the wall, spatter thinning upward, keyed to seed+column
+      if(bloodSeed!==undefined){
+        const vfrac=(y-y0)/lh;                              // 0 top .. 1 bottom of wall
+        const spat=((tu*7 + tv*13 + bloodSeed)&15)/15;
+        const heavy = vfrac>0.45 ? (vfrac-0.45)/0.55 : 0;   // pooling toward the base
+        const drip = (spat<0.4 && vfrac>0.2) ? (0.4-spat) : 0;
+        const a=Math.min(0.9, heavy*1.2 + drip*0.8);
+        if(a>0.04){ r=r*(1-a)+78*a; gg=gg*(1-a)+6*a; b=b*(1-a)+9*a; }
+      }
+      r+=(FOG[0]-r)*fg;gg+=(FOG[1]-gg)*fg;b+=(FOG[2]-b)*fg;
+      px32[y*W+col]=(255<<24)|((b|0)<<16)|((gg|0)<<8)|(r|0);}}
+  ctx.putImageData(img,0,0);
+  drawEnemies();
+  if(muzzle>0){ctx.fillStyle='rgba(255,220,140,'+(muzzle*0.5)+')';ctx.fillRect(0,0,W,H);}
+  drawDamageVignette();
+  drawMinimap();
+}
+
+// ---- health-driven screen effects (RULE H2) ----
+function drawDamageVignette(){
+  const frac=Math.max(0,Math.min(1,P.hp/100));
+  const hurt=1-frac;                              // 0 healthy .. 1 near death
+  if(hurt<=0.02) return;
+  // red vignette from the edges, thickening as HP drops
+  const g=ctx.createRadialGradient(W/2,H/2,H*0.28, W/2,H/2,H*0.72);
+  g.addColorStop(0,'rgba(120,0,0,0)');
+  g.addColorStop(1,'rgba(120,0,0,'+(0.15+0.6*hurt).toFixed(2)+')');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // critical: a pulsing heartbeat throb
+  if(frac<0.3){
+    const beat=Math.max(0,Math.sin(T*7));         // ~1Hz-ish double-thump feel
+    ctx.fillStyle='rgba(150,0,0,'+(0.10+0.22*beat).toFixed(2)+')';
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+// ---- minimap (RULE H1) ----
+function drawMinimap(){
+  const cell=4, pad=6, mw=MW*cell, mh=MH*cell;
+  const ox=W-mw-pad, oy=pad;
+  ctx.save();
+  ctx.globalAlpha=0.78;
+  ctx.fillStyle='#0a0708'; ctx.fillRect(ox-2,oy-2,mw+4,mh+4);
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    const c=grid[y][x];
+    if(c===0){ ctx.fillStyle='#241c22'; }
+    else if(c===3){ ctx.fillStyle='#c8a84a'; }        // door
+    else { ctx.fillStyle='#4a3a44'; }                 // wall
+    ctx.fillRect(ox+x*cell,oy+y*cell,cell-0.5,cell-0.5);
+  }
+  // keys (uncollected) and exit, once relevant
+  meta.keys.forEach((k,i)=>{ if(!keysGot[i]){ ctx.fillStyle='#ffe27a';
+    ctx.fillRect(ox+(k[0]-0.5)*cell-1,oy+(k[1]-0.5)*cell-1,cell,cell); } });
+  if(meta.exit){ ctx.fillStyle=(keyCount>=meta.keys.length)?'#4f4':'#833';
+    ctx.fillRect(ox+(meta.exit[0]-0.5)*cell-1,oy+(meta.exit[1]-0.5)*cell-1,cell+1,cell+1); }
+  // player dot + facing line
+  const pxm=ox+P.x*cell, pym=oy+P.y*cell;
+  ctx.fillStyle='#0ff'; ctx.beginPath(); ctx.arc(pxm,pym,2.2,0,7); ctx.fill();
+  ctx.strokeStyle='#0ff'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pxm,pym);
+  ctx.lineTo(pxm+Math.cos(P.a)*6,pym+Math.sin(P.a)*6); ctx.stroke();
+  ctx.restore();
+}
+
+// ---- enemy sprite (procedural, rabid run/lunge) ----
+function drawPatientSprite(e){
+  const S=64,s=document.createElement('canvas');s.width=S;s.height=S;const c=s.getContext('2d');
+  const cx=S/2, st=e.state;
+  const run = (st==='chase') ? Math.sin(T*14+e.x)*4 : 0;      // lurching run
+  const lean = st==='attack'?8 : st==='chase'?4 : 0;
+  const gown=e.hitFlash>0?'#ffd0d0':'#c9c4b4', gownSh='#9a9484', strap='#3a2c22',
+        skin=e.hitFlash>0?'#ffd0d0':'#b9a48c', skinSh='#8f7a63';
+  // legs (mid-stride when chasing)
+  c.fillStyle=gownSh; c.fillRect(cx-9,44,7,16-run); c.fillRect(cx+2,44,7,16+run);
+  // gown
+  c.fillStyle=gown;c.beginPath();c.moveTo(cx-11,26);c.lineTo(cx+11,26);c.lineTo(cx+13,50);c.lineTo(cx-13,50);c.closePath();c.fill();
+  c.fillStyle=strap;c.fillRect(cx-13,32,26,3);c.fillRect(cx-13,40,26,3);
+  // arms lunging forward when chase/attack
+  c.fillStyle=skin;
+  if(st==='chase'||st==='attack'){c.fillRect(cx-18,29+lean,7,4);c.fillRect(cx+11,29+lean,7,4);
+    c.fillStyle=skinSh;c.fillRect(cx-22,28+lean,5,6);c.fillRect(cx+17,28+lean,5,6);}
+  else{c.fillRect(cx-13,30,4,14);c.fillRect(cx+9,30,4,14);}
+  // head lolling
+  const hx=cx+lean*0.6,hy=16;
+  c.fillStyle=skin;c.beginPath();c.arc(hx,hy,8,0,7);c.fill();
+  c.fillStyle=skinSh;c.beginPath();c.arc(hx+3,hy+1,8,0,7);c.fill();
+  c.fillStyle='#241a16';c.beginPath();c.arc(hx,hy-3,8,Math.PI,0);c.fill();
+  // eyes: red when rabid/awake, bright dot otherwise
+  const eye=(st==='dormant')?'#fff2c8':'#ff3020';
+  c.fillStyle=eye;c.fillRect(hx-4,hy-1,2,2);c.fillRect(hx+2,hy-1,2,2);
+  // gaping mouth when awake
+  if(st!=='dormant'){c.fillStyle='#1a0808';c.fillRect(hx-3,hy+3,6,5);}
+  // blood
+  if(e.dmg>0){c.fillStyle='rgba(120,10,14,'+(0.55*e.dmg).toFixed(2)+')';
+    for(let i=0;i<e.dmg*9;i++)c.fillRect(cx-11+((i*97)%22),27+((i*53)%23),3,4);}
+  if(st==='dead'){const s2=document.createElement('canvas');s2.width=S;s2.height=S;const c2=s2.getContext('2d');
+    c2.translate(S/2,S*0.82);c2.rotate(Math.PI/2*0.92);c2.drawImage(s,-S/2,-S/2);return s2;}
+  return s;
+}
+function drawEnemies(){
+  const list=enemies.map(e=>({e,d:Math.hypot(e.x-P.x,e.y-P.y)})).sort((a,b)=>b.d-a.d);
+  for(const {e,d} of list){
+    // corpse stays permanently — the room remembers
+    let rel=Math.atan2(e.y-P.y,e.x-P.x)-P.a;while(rel>Math.PI)rel-=2*Math.PI;while(rel<-Math.PI)rel+=2*Math.PI;
+    if(Math.abs(rel)>FOV/1.25)continue;
+    const size=Math.min(H*2.4,(H/d)|0), screenX=(0.5+rel/FOV)*W;
+    const sp=drawPatientSprite(e), sx=screenX-size/2, sy=H/2-size/2+size*0.12;
+    // LIGHT the sprite like everything else: sample the light pool at its feet,
+    // apply the same ambient floor as walls, then fade with distance fog. An
+    // unlit patient is a dark silhouette; one under a torch is lit. (RULE L2/L4)
+    const litRaw=lightAt(e.x,e.y);
+    const shade=Math.min(1, 0.32+1.05*litRaw);        // darker base, stronger light pop (RULE L4)
+    let fg=(d-2)/(11-2); fg=fg<0?0:fg>1?1:fg;          // match world fog range
+    // pre-shade the sprite onto a temp canvas: multiply by light, then fog toward FOG colour
+    const tmp=document.createElement('canvas'); tmp.width=64; tmp.height=64;
+    const tc=tmp.getContext('2d'); tc.drawImage(sp,0,0);
+    const idata=tc.getImageData(0,0,64,64), px=idata.data;
+    for(let i=0;i<px.length;i+=4){ if(px[i+3]<8)continue;
+      let r=px[i]*shade, g=px[i+1]*shade, b=px[i+2]*shade;
+      r=r+(FOGCOL[0]-r)*fg; g=g+(FOGCOL[1]-g)*fg; b=b+(FOGCOL[2]-b)*fg;
+      px[i]=r; px[i+1]=g; px[i+2]=b;
+    }
+    tc.putImageData(idata,0,0);
+    for(let X=Math.max(0,sx|0);X<Math.min(W,(sx+size)|0);X++){
+      if(d>zbuf[X]+0.15)continue;                       // wall occludes this column
+      ctx.drawImage(tmp,(X-sx)/size*64,0,64/size,64, X,sy, 1,size);
+    }
+  }
+}
+
+// ---- pistol fire: hitscan straight down the view center ----
+function fire(){
+  if(fireCd>0||dead||won)return;
+  fireCd=PISTOL.cooldown; muzzle=1;
+  // ray straight ahead; find the nearest enemy within a small angular cone AND unobstructed
+  const dx=Math.cos(P.a),dy=Math.sin(P.a);
+  let best=null,bestD=1e9;
+  for(const e of enemies){ if(e.state==='dead')continue;
+    const ex=e.x-P.x,ey=e.y-P.y,dist=Math.hypot(ex,ey); if(dist>PISTOL.range)continue;
+    let rel=Math.atan2(ey,ex)-P.a;while(rel>Math.PI)rel-=2*Math.PI;while(rel<-Math.PI)rel+=2*Math.PI;
+    const aim=Math.atan2(0.45,dist);              // enemy half-width in radians
+    if(Math.abs(rel)<aim && los(P.x,P.y,e.x,e.y) && dist<bestD){best=e;bestD=dist;}
+  }
+  if(best){ hitEnemy(best, PISTOL.dmg); SFX.hit(best.x,best.y); }
+  SFX.pistol();
+  alertNoise(P.x, P.y, 9);        // the gunshot is loud — nearby patients investigate
+}
+function hitEnemy(e,amount){
+  e.hp-=amount; e.hitFlash=0.08; e.dmg=Math.min(1,1-e.hp/30);
+  // knockback + stagger scaled by (1-mass)
+  const kb=(1-e.mass)*0.25, dx=Math.cos(P.a),dy=Math.sin(P.a);
+  if(!solid(e.x+dx*kb,e.y))e.x+=dx*kb; if(!solid(e.x,e.y+dy*kb))e.y+=dy*kb;
+  e.staggerT=Math.max(e.staggerT,(1-e.mass)*0.25);
+  if(e.hp<=0){ e.state='dead'; e.t=0; spawnBlood(e); killCount++; SFX.death(e.x,e.y);
+    quip();   // Falcon cracks wise — he thinks these are just monsters
+  }
+  else if(e.state==='dormant'){ wake(e); }
+}
+function wake(e){ if(e.state==='dormant'||e.state==='search'){ e.state='alert'; e.t=0;
+  e.tele=RABID.wakeTelegraph*(0.6+Math.random()*0.9); SFX.shriek(e.x,e.y); } }   // scream on waking
+function checkWin(){ /* win is reaching the exit with both keys — see pickups() */ }
+
+// ---- Falcon's one-liners (he thinks he's fighting monsters) ----
+const LINES=[
+  "Eat lead, dirtbag!","Stay down!","Not today, freak.","Should've stayed in your cell.",
+  "That's what you get.","Too slow, ugly.","Lights out.","Back to bed!",
+  "Who's next?","Falcon don't miss."
+];
+let quipT=0;
+function quip(){
+  if(T<quipT) return;                         // don't spam — one every couple seconds
+  quipT=T+2.2;
+  const q=document.getElementById('quip');
+  q.textContent='"'+LINES[(Math.random()*LINES.length)|0]+'"';
+  q.style.opacity=1; setTimeout(()=>{q.style.opacity=0;}, 1400);
+}
+
+// ---- key pickup + locked exit ----
+function pickups(){
+  meta.keys.forEach((k,i)=>{ if(keysGot[i])return;
+    if(Math.hypot(k[0]-P.x,k[1]-P.y)<0.5){ keysGot[i]=true; keyCount++;
+      document.getElementById('keys').textContent=keyCount+'/'+meta.keys.length;
+      SFX.pickup&&SFX.pickup();
+      if(keyCount>=meta.keys.length){ document.getElementById('objective').textContent='GET TO THE EXIT';
+        flash('BOTH KEYS. NOW FIND THE WAY DOWN.',2600); }
+      else flash('A KEY. ('+keyCount+'/'+meta.keys.length+')',1600);
+    }});
+  if(meta.exit && !won && !dead){
+    const dx=meta.exit[0]-P.x, dy=meta.exit[1]-P.y;
+    if(dx*dx+dy*dy<0.6){
+      if(keyCount>=meta.keys.length){ winFloor(); }
+      else flashOnce('exitlock','THE EXIT IS CHAINED. FIND THE KEYS.',1600);
+    }
+  }
+}
+let lastFlash={};
+function flashOnce(id,s,ms){ if(T-(lastFlash[id]||-99)<2)return; lastFlash[id]=T; flash(s,ms); }
+function winFloor(){ if(won)return; won=true; SFX.win(); showEndCard(); }
+
+/* ---- blood decals ----
+   On death: a pool spreads on the floor under the body, and if the body died
+   against a wall, a splatter is baked onto that wall. Decals are permanent for
+   the session — the room should look like something happened in it. */
+const floorBlood=[];   // {x,y,r} world-space pools
+const wallBlood={};    // "mx,my,side" -> splatter seed, painted on that wall face
+function spawnBlood(e){
+  floorBlood.push({x:e.x, y:e.y, r:0.15, grow:1});    // pool grows for a moment
+  // check the four neighbours; if a wall is adjacent, splatter it
+  const around=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(const [dx,dy] of around){
+    const mx=(e.x+dx*0.5)|0, my=(e.y+dy*0.5)|0;
+    if(mx>=0&&my>=0&&mx<MW&&my<MH&&grid[my][mx]>=1){
+      const key=mx+','+my+','+(dx!==0?0:1);
+      wallBlood[key]=(e.x*13+e.y*7)&255;              // seed for the splatter pattern
+    }
+  }
+}
+
+// ---- enemy AI ----
+// can this enemy currently SEE the player? (cone + range + line of sight)
+function canSee(e){
+  const dx=P.x-e.x, dy=P.y-e.y, dist=Math.hypot(dx,dy);
+  if(dist>RABID.sightRange) return false;
+  if(!los(e.x,e.y,P.x,P.y)) return false;
+  // in the dark, sight range shrinks — a player standing in shadow is harder to
+  // spot. Use the light level at the PLAYER's position as visibility.
+  const vis=0.35+lightAt(P.x,P.y);          // lurk in darkness = seen later
+  return dist < RABID.sightRange*Math.min(1,vis);
+}
+function moveToward(e,tx,ty,speed,dt){
+  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d,step=speed*dt;
+  // greedy with wall-slide; if fully blocked, nudge along a perpendicular so
+  // they don't freeze against a doorway edge
+  let moved=false;
+  if(!solid(e.x+ux*step,e.y)){e.x+=ux*step;moved=true;}
+  if(!solid(e.x,e.y+uy*step)){e.y+=uy*step;moved=true;}
+  if(!moved){ if(!solid(e.x+uy*step,e.y))e.x+=uy*step; else if(!solid(e.x,e.y+ux*step))e.y+=ux*step; }
+  return d;
+}
+function updateEnemies(dt){
+  for(const e of enemies){
+    e.t+=dt; if(e.hitFlash>0)e.hitFlash-=dt;
+    if(e.state==='dead'){
+      for(const bp of floorBlood){ if(bp.grow && Math.abs(bp.x-e.x)<0.01 && Math.abs(bp.y-e.y)<0.01){
+        if(bp.r<0.72){ bp.r+=dt*0.35; } else { bp.grow=0; } } }
+      continue;
+    }
+    if(e.staggerT>0){ e.staggerT-=dt; continue; }
+    const dx=P.x-e.x,dy=P.y-e.y,dist=Math.hypot(dx,dy);
+    const sees=canSee(e);
+    // sight confirmation builds up while seeing, decays otherwise (Isolation rule:
+    // needs a beat to commit, so a flash of movement isn't an instant lock-on)
+    if(sees){ e.confirm=Math.min(1,e.confirm+dt*2.2); e.lkx=P.x; e.lky=P.y; }
+    else    { e.confirm=Math.max(0,e.confirm-dt*0.8); }
+
+    if(e.state==='dormant'){
+      if(sees && e.confirm>0.4){ wake(e); }
+      continue;
+    }
+    if(e.state==='alert'){
+      if(e.t>=(e.tele||RABID.wakeTelegraph)){ e.state='chase'; }
+      continue;
+    }
+    if(e.state==='chase'){
+      if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; SFX.attack(e.x,e.y); continue; }
+      if(sees){ e.lkx=P.x; e.lky=P.y; moveToward(e,P.x,P.y,RABID.chaseSpeed,dt); }
+      else {
+        // lost sight — go to last-known position, then start searching
+        const d=moveToward(e,e.lkx,e.lky,RABID.chaseSpeed*0.85,dt);
+        if(d<0.6){ e.state='search'; e.t=0; e.searchT=0; e.wanderA=Math.random()*6.28; }
+      }
+      continue;
+    }
+    if(e.state==='search'){
+      // reacquire if we see the player again
+      if(sees && e.confirm>0.35){ e.state='chase'; continue; }
+      e.searchT+=dt;
+      // wander around the last-known area; change heading periodically
+      if(e.t> (0.8+Math.random()*0.8)){ e.wanderA+=(Math.random()-0.5)*2.4; e.t=0; }
+      const tx=e.x+Math.cos(e.wanderA), ty=e.y+Math.sin(e.wanderA);
+      const d=moveToward(e,tx,ty,RABID.searchSpeed,dt);
+      if(d<0.05){ e.wanderA+=1.6; }                 // bumped a wall, turn
+      if(e.searchT>RABID.giveUp){ e.state='dormant'; e.confirm=0; }  // gave up, lurk again
+      continue;
+    }
+    if(e.state==='attack'){
+      if(e.t>=RABID.attackWind){
+        if(dist<=RABID.attackRange+0.3){ hurtPlayer(RABID.attackDmg); }
+        e.state='chase'; e.t=-RABID.attackCooldown;
+      }
+    }
+  }
+}
+// a noise (gunshot) at gx,gy wakes/redirects enemies within earshot flood-fill
+function alertNoise(gx,gy,radius){
+  for(const e of enemies){ if(e.state==='dead')continue;
+    const d=Math.hypot(e.x-gx,e.y-gy);
+    if(d<radius){
+      e.lkx=gx; e.lky=gy;                          // investigate the sound
+      if(e.state==='dormant'){ e.state='search'; e.searchT=0; e.t=0; e.wanderA=Math.atan2(gy-e.y,gx-e.x); }
+      else if(e.state==='search'){ e.wanderA=Math.atan2(gy-e.y,gx-e.x); e.searchT=0; }
+    }
+  }
+}
+function hurtPlayer(amount){
+  if(dead||won)return;
+  P.hp-=amount; document.getElementById('hp').textContent=Math.max(0,P.hp|0);
+  const f=document.getElementById('flash'); f.style.opacity=0.5; setTimeout(()=>f.style.opacity=0,80);
+  SFX.playerHurt();
+  if(P.hp<=0){ dead=true; SFX.lose(); running=false;
+    setTimeout(()=>{ document.getElementById('deathcard').style.display='flex'; }, 700); }
+}
+let msgT=0;
+function flash(s,ms){const m=document.getElementById('msg');m.textContent=s;m.style.opacity=1;msgT=T+ms/1000;}
+
+/* ============================================================
+   SOUND — all synthesized with Web Audio (no files, CEF-safe).
+   The research: audio carries the horror the renderer can't. So we do
+   POSITIONAL sound — an enemy's moan is quieter and panned by where it
+   is relative to you, so you hear the swarm converging in the dark
+   before you see it. CEF needs the context resumed on a user gesture
+   (the ENTER click handles that).
+   ============================================================ */
+let AC=null, master=null, musicBus=null;
+function initAudio(){
+  if(AC) return;
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=0.85; master.connect(AC.destination);
+    musicBus=AC.createGain(); musicBus.gain.value=0.0; musicBus.connect(master);
+    startMusic();
+  }catch(e){ AC=null; }
+}
+// positional gain+pan from a world point relative to the player's facing
+function posMix(wx,wy,maxDist){
+  const dx=wx-P.x, dy=wy-P.y, dist=Math.hypot(dx,dy);
+  let g=Math.max(0, 1-dist/maxDist); g*=g;                 // falloff
+  // pan: project onto the player's right vector
+  const rx=-Math.sin(P.a), ry=Math.cos(P.a);
+  let pan=(dx*rx+dy*ry)/(dist||1); pan=Math.max(-1,Math.min(1,pan));
+  return {g,pan,dist};
+}
+function tone({freq=200,type='sine',dur=0.2,vol=0.3,pan=0,slideTo=null,attack=0.005,decay=null}){
+  if(!AC) return;
+  const t=AC.currentTime, o=AC.createOscillator(), g=AC.createGain();
+  const pn=AC.createStereoPanner? AC.createStereoPanner():null;
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+attack);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); if(pn){pn.pan.value=pan;g.connect(pn);pn.connect(master);} else g.connect(master);
+  o.start(t); o.stop(t+dur+0.02);
+}
+function noise({dur=0.2,vol=0.3,pan=0,lp=1200,hp=0}){
+  if(!AC) return;
+  const t=AC.currentTime, n=Math.floor(AC.sampleRate*dur);
+  const buf=AC.createBuffer(1,n,AC.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);   // decaying noise
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const g=AC.createGain(); g.gain.value=vol;
+  const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=lp;
+  const pn=AC.createStereoPanner?AC.createStereoPanner():null;
+  src.connect(f); f.connect(g);
+  if(pn){pn.pan.value=pan;g.connect(pn);pn.connect(master);} else g.connect(master);
+  src.start(t);
+}
+// --- the sound kit ---
+const SFX={
+  pistol(){ noise({dur:0.14,vol:0.85,lp:3200}); tone({freq:180,type:'square',dur:0.12,vol:0.45,slideTo:60}); },
+  pistolDry(){ tone({freq:2000,type:'square',dur:0.03,vol:0.12}); },
+  hit(wx,wy){ const m=posMix(wx,wy,14); noise({dur:0.1,vol:0.55*m.g+0.2,pan:m.pan,lp:1500}); },
+  shriek(wx,wy){ const m=posMix(wx,wy,16);           // the wake scream — carries far
+    tone({freq:520,type:'sawtooth',dur:0.55,vol:0.55*m.g+0.1,pan:m.pan,slideTo:180,attack:0.02});
+    tone({freq:780,type:'sawtooth',dur:0.45,vol:0.3*m.g,pan:m.pan,slideTo:240}); },
+  moan(wx,wy){ const m=posMix(wx,wy,11); if(m.g<0.02)return;
+    tone({freq:90+Math.random()*40,type:'sawtooth',dur:0.6+Math.random()*0.5,vol:0.3*m.g,pan:m.pan,slideTo:70}); },
+  attack(wx,wy){ const m=posMix(wx,wy,10);
+    tone({freq:300,type:'square',dur:0.2,vol:0.5*m.g+0.1,pan:m.pan,slideTo:900}); },
+  playerHurt(){ tone({freq:200,type:'sawtooth',dur:0.28,vol:0.6,slideTo:80});
+    noise({dur:0.22,vol:0.45,lp:800}); },
+  death(wx,wy){ const m=posMix(wx,wy,14);
+    tone({freq:160,type:'sawtooth',dur:0.55,vol:0.5*m.g+0.1,pan:m.pan,slideTo:40});
+    noise({dur:0.45,vol:0.4*m.g,pan:m.pan,lp:900}); },
+  win(){ [0,4,7,12].forEach((s,i)=>setTimeout(()=>tone({freq:220*Math.pow(2,s/12),type:'triangle',dur:0.35,vol:0.4}),i*140)); },
+  lose(){ tone({freq:300,type:'sawtooth',dur:1.3,vol:0.55,slideTo:40}); },
+  pickup(){ tone({freq:660,type:'triangle',dur:0.12,vol:0.35}); tone({freq:990,type:'triangle',dur:0.18,vol:0.25}); }
+};
+/* ---- MUSIC: a synthesized horror score ----
+   Two beds. A low, always-present drone (dread you can't shake), and a tension
+   layer that swells when patients are awake and hunting near you — the Isolation
+   "tension budget" made audible. Plus an occasional sparse detuned piano-ish
+   note for that abandoned-asylum feel. All oscillators, no files. */
+let musicNodes=[], pianoClock=6;
+function startMusic(){
+  if(!AC) return;
+  // drone: two detuned low saws through a slow lowpass — the bed
+  const droneG=AC.createGain(); droneG.gain.value=0.12; droneG.connect(musicBus);
+  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=340; lp.connect(droneG);
+  [55, 55.4, 82.5].forEach(f=>{ const o=AC.createOscillator(); o.type='sawtooth';
+    o.frequency.value=f; o.connect(lp); o.start(); musicNodes.push(o); });
+  // tension layer: a dissonant high cluster, gain driven live by threat level
+  tensionG=AC.createGain(); tensionG.gain.value=0.0; tensionG.connect(musicBus);
+  const tlp=AC.createBiquadFilter(); tlp.type='bandpass'; tlp.frequency.value=1200; tlp.Q.value=6; tlp.connect(tensionG);
+  [220, 233, 466].forEach(f=>{ const o=AC.createOscillator(); o.type='sawtooth';
+    o.frequency.value=f; o.connect(tlp); o.start(); musicNodes.push(o); });
+  // fade the whole music bus in once it's running
+  musicBus.gain.linearRampToValueAtTime(0.9, AC.currentTime+3);
+}
+let tensionG=null, musicClock=0;
+function updateMusic(dt){
+  if(!AC||!tensionG) return;
+  // threat = how many awake patients, weighted by nearness
+  let threat=0;
+  for(const e of enemies){ if(e.state==='dead'||e.state==='dormant')continue;
+    const d=Math.hypot(e.x-P.x,e.y-P.y); threat+=Math.max(0,1-d/14)*(e.state==='chase'||e.state==='attack'?1.4:0.7); }
+  threat=Math.min(1.2,threat);
+  // smooth the tension gain toward the threat level
+  const target=threat*0.16;
+  tensionG.gain.setTargetAtTime(target, AC.currentTime, 0.4);
+  // sparse detuned piano note when it's quiet — abandoned-asylum unease
+  pianoClock-=dt;
+  if(pianoClock<=0 && threat<0.3){ pianoClock=5+Math.random()*7;
+    const notes=[196,220,262,294,175]; const f=notes[(Math.random()*notes.length)|0]*(Math.random()<0.5?1:0.5);
+    const o=AC.createOscillator(),g=AC.createGain(); o.type='triangle';
+    o.frequency.value=f*(1+(Math.random()-0.5)*0.01);       // slightly out of tune
+    g.gain.setValueAtTime(0,AC.currentTime); g.gain.linearRampToValueAtTime(0.14,AC.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.2);
+    o.connect(g); g.connect(musicBus); o.start(); o.stop(AC.currentTime+2.3);
+  }
+}
+
+// ambient moan scheduler: nearby awake enemies moan on a loose timer
+let moanClock=0;
+function updateAmbientSound(dt){
+  if(!AC) return;
+  moanClock-=dt;
+  if(moanClock<=0){ moanClock=0.7+Math.random()*1.1;
+    // pick the nearest awake-ish enemy and moan from it
+    let near=null,nd=99;
+    for(const e of enemies){ if(e.state==='dead'||e.state==='dormant')continue;
+      const d=Math.hypot(e.x-P.x,e.y-P.y); if(d<nd){nd=d;near=e;} }
+    if(near && nd<11) SFX.moan(near.x,near.y);
+  }
+}
+
+// ---- movement + input (e.key, CEF-safe) ----
+const keys={};
+addEventListener('keydown',e=>{const k=(e.key||'').toLowerCase();keys[k]=true;
+  if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault();
+  if(k===' ')fire();});
+addEventListener('keyup',e=>{keys[(e.key||'').toLowerCase()]=false;});
+let dragging=false,lastX=0;
+cv.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;fire();});
+addEventListener('mouseup',()=>dragging=false);
+addEventListener('mousemove',e=>{if(dragging){P.a+=(e.clientX-lastX)*0.005;lastX=e.clientX;}
+  if(document.pointerLockElement===cv)P.a+=e.movementX*0.0025;});
+cv.addEventListener('click',()=>{if(cv.requestPointerLock&&!dragging)cv.requestPointerLock();});
+
+let running=false;
+function step(dt){
+  if(!running)return;
+  if(fireCd>0)fireCd-=dt; if(muzzle>0)muzzle-=dt*6;
+  if(!dead&&!won){
+    const spd=2.6*dt,rot=2.2*dt;let mvF=0,mvS=0;
+    if(keys['w']||keys['arrowup'])mvF+=1; if(keys['s']||keys['arrowdown'])mvF-=1;
+    if(keys['a'])mvS-=1; if(keys['d'])mvS+=1;
+    if(keys['arrowleft']||keys['q'])P.a-=rot; if(keys['arrowright']||keys['e'])P.a+=rot;
+    if(mvF||mvS){const c=Math.cos(P.a),s=Math.sin(P.a);
+      const nx=P.x+(c*mvF-s*mvS)*spd, ny=P.y+(s*mvF+c*mvS)*spd;
+      if(!solid(nx,P.y))P.x=nx; if(!solid(P.x,ny))P.y=ny;}
+    updateEnemies(dt);
+    updateAmbientSound(dt);
+    updateMusic(dt);
+    pickups();
+  }
+  if(T>msgT && !dead && !won)document.getElementById('msg').style.opacity=0;
+}
+let last=performance.now();
+function loop(now){const dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;step(dt);render();requestAnimationFrame(loop);}
+document.getElementById('go').onclick=()=>{document.getElementById('tap').style.display='none';running=true;last=performance.now();
+  initAudio(); if(AC&&AC.state==='suspended')AC.resume();};
+
+// ---- end-of-floor card: seeds the first quiet hint of the truth ----
+function showEndCard(){
+  running=false;
+  // Falcon's read: triumphant. The dim line is the asylum's read: wrong.
+  document.getElementById('endtitle').textContent='ADMISSIONS — CLEARED';
+  document.getElementById('endline1').textContent="\"Ground floor's mine. Whatever did this, it's downstairs. So am I.\"";
+  // the seed — a detail Falcon shrugs off, that the player will understand later
+  document.getElementById('endline2').textContent="(One of them wore a visitor's badge. It had your name on it. ...Must be a mix-up.)";
+  document.getElementById('endcard').style.display='flex';
+}
+document.getElementById('descend').onclick=()=>{
+  // next floor not built yet — for now, loop the message. Hook for Floor 2.
+  document.getElementById('endcard').style.display='none';
+  flash('FLOOR 2 — COMING SOON',3000);
+};
+document.getElementById('retry').onclick=()=>location.reload();
+requestAnimationFrame(loop);
+
+// ---- headless test hooks ----
+window.__P=P; window.__enemies=enemies;
+window.__shot=(x,y,a)=>{if(x!=null){P.x=x;P.y=y;P.a=a;}render();return cv.toDataURL('image/png');};
+window.__fire=()=>{fireCd=0;fire();};
+window.__tick=(dt)=>{running=true;const o=performance.now;step(dt);T+=dt;};   // advance sim by dt
+window.__state=()=>({php:P.hp,dead,won,enemies:enemies.map(e=>({x:+e.x.toFixed(2),y:+e.y.toFixed(2),hp:e.hp,state:e.state}))});
+</script>
+</body>
+</html>
