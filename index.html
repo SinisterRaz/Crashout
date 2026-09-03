@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>ASYLUM — Combat Test</title>
+<title>CRASHOUT — Blackhills Asylum</title>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:monospace;color:#9fb}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
@@ -39,6 +39,7 @@
 <div id="msg"></div>
 <div id="quip"></div>
 <div id="hud"><span>HP <span class="hp" id="hp">100</span></span>
+  <span><span id="weapon" style="color:#fd8">PISTOL</span> <span class="ammo" id="ammo2">24</span></span>
   <span id="objective">FIND THE KEYS</span>
   <span>KEYS <span class="ammo" id="keys">0/2</span></span></div>
 
@@ -46,6 +47,7 @@
 <div id="tap" class="card">
   <div class="cardwrap">
     <h1>JOHN FALCON</h1>
+    <div style="color:#c33;letter-spacing:8px;font-size:13px;margin:-2px 0 6px">C R A S H O U T</div>
     <h2>BLACKHILLS ASYLUM</h2>
     <p class="story">They locked me in Blackhills and called me crazy.</p>
     <p class="story">They're wrong. I don't belong in here — and I'm not staying.</p>
@@ -82,26 +84,30 @@
 
 // ---- a small sealed room (16x12). # wall, . floor, S start, T tile accent ----
 const MAP=[
-"############################",
-"#........#........#........#",
-"#...K....#........#....E....#",
-"#...TT...D........D....##...#",
-"#...TT...#........#........#",
-"#........#........#........#",
-"####D#########D#########D####",
-"#........#........#........#",
-"#........#........#........#",
-"#...S....D........#........#",
-"#........#........D........#",
-"####D#########D####....##...#",
-"#........#........#....##...#",
-"#........#........#........#",
-"#........D........D........#",
-"#........#........#........#",
-"####D#########D#########D####",
-"#........#........#........#",
-"#......K.#........#........#",
-"############################"];
+"########################################",
+"########################################",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"##..K...##......##......##......##..E..#",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"#.##D#######D#######D#######D#######D###",
+"#......................................#",
+"#.##D#######D#######.#######D#######D###",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"#.##D#######D#######D#######D#######D###",
+"#......................................#",
+"#.##D#######D#######D#######D#######D###",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"##..S...##......##......##......##..K..#",
+"##......##......##......##......##.....#",
+"##......##......##......##......##.....#",
+"########################################",
+"########################################"];
 const MH=MAP.length, MW=MAP[0].length;
 const grid=[], meta={start:[3.5,7.5], keys:[], exit:null};
 for(let y=0;y<MH;y++){const r=[];for(let x=0;x<MW;x++){const ch=MAP[y][x];
@@ -129,11 +135,16 @@ const TEX={1:makeTex('plaster'),4:makeTex('tile')};
 // ---- lights ----
 // Sparse, dim lights — most of the arena is dark so patients lurk unseen.
 const LIGHTS=[
-  {x:4.5,y:9.5,r:4,i:0.9},     // a little light near the start
-  {x:13,y:3,r:3.5,i:0.8},
-  {x:22,y:8,r:3.5,i:0.7},
-  {x:13,y:13,r:3.5,i:0.75},
-  {x:22,y:17,r:3,i:0.7}
+  // WF2: light leads the way. Start room lit; key rooms and the exit glow brighter
+  // as beacons; the hub column is lit so it reads as the central landmark.
+  {x:4.5,y:19,r:4,i:0.9},       // start room (bottom-left)
+  {x:4.5,y:4,r:3.5,i:1.0},      // KEY room top-left — bright beacon
+  {x:36.5,y:19,r:3.5,i:1.0},    // KEY room bottom-right — bright beacon
+  {x:36.5,y:4,r:4,i:1.1},       // EXIT top-right — brightest, the goal
+  {x:20,y:11.5,r:5,i:0.8},      // central hub column — the landmark
+  {x:20,y:8,r:3.5,i:0.6},{x:20,y:15,r:3.5,i:0.6},
+  {x:12,y:8,r:2.5,i:0.5},{x:28,y:8,r:2.5,i:0.5},   // spine pools, dim
+  {x:12,y:15,r:2.5,i:0.5},{x:28,y:15,r:2.5,i:0.5},
 ];
 
 // ---- player ----
@@ -141,26 +152,93 @@ const P={x:meta.start[0],y:meta.start[1],a:0,hp:100};
 let dead=false, won=false;
 
 // ---- the Patient (rabid) ----
-function makePatient(x,y){return {x,y,hp:30,mass:0.4,state:'dormant',t:0,facing:0,dmg:0,
-  spd:0, hitFlash:0, staggerT:0,
-  lkx:0, lky:0,          // last-known player position (for SEARCH)
-  searchT:0,             // how long we've been searching
-  confirm:0,             // sight-confirmation buildup (Isolation: needs a beat)
-  wanderA:Math.random()*6.28 };}
-// 10 patients scattered through the far rooms, away from the start (4,9)
+// ---- ENEMY TYPES ----
+// All share the one sense/state AI; they differ in stats + one signature trait,
+// per GAME-DESIGN-RULES. Damage-type multipliers make weapons matter per type.
+const ETYPES={
+  basic: {hp:30, mass:0.4, chase:2.7, sightRange:10, dmg:14, sz:1.0, tint:null,
+    dmgMult:{bullet:1,pellet:1,melee:1.1,explosive:1.4,fire:1}},
+  // TANK: big, slow, soaks bullets, shrugs stagger — explosives/shotgun/MG answer it
+  tank:  {hp:110, mass:0.85, chase:1.6, sightRange:9, dmg:26, sz:1.5, tint:[120,90,70],
+    dmgMult:{bullet:0.6,pellet:0.9,melee:0.7,explosive:1.6,fire:1.2}},
+  // FAST: sprinter, low HP, closes distance fast — panic enemy, shotgun/reflexes
+  fast:  {hp:16, mass:0.25, chase:4.4, sightRange:12, dmg:9, sz:0.85, tint:[150,60,60],
+    dmgMult:{bullet:1.2,pellet:1.1,melee:1.2,explosive:1.3,fire:1}},
+};
+function makeEnemy(x,y,type){
+  const T=ETYPES[type]||ETYPES.basic;
+  return {x,y,type,hp:T.hp,maxhp:T.hp,mass:T.mass,chase:T.chase,sight:T.sightRange,
+    atkDmg:T.dmg,sz:T.sz,tint:T.tint,dmgMult:T.dmgMult,
+    state:'dormant',t:0,facing:0,dmg:0,spd:0,hitFlash:0,staggerT:0,
+    lkx:0,lky:0,searchT:0,confirm:0,wanderA:Math.random()*6.28,
+    hx:x,hy:y,roam:1.2+Math.random()*1.6,
+    idle:Math.random()<0.7,idleMoving:false,idleT:Math.random()*2};
+}
+function makePatient(x,y){ return makeEnemy(x,y,'basic'); }   // back-compat
+/* ---- paced enemy roster (RULES PC1-PC5) ----
+   Start bottom-left (4,19). Path climbs toward exit top-right (36,4).
+   Difficulty escalates along the route: basics first (teach), then fast, then
+   tanks + mixed comps deeper. Start room and the room next to it stay clear. */
 const enemies=[
-  makePatient(13.5,2.5), makePatient(22.5,2.5), makePatient(24.5,3.5),
-  makePatient(21.5,8.5), makePatient(13.5,9.5), makePatient(25.5,10.5),
-  makePatient(13.5,13.5), makePatient(22.5,13.5), makePatient(13.5,17.5),
-  makePatient(23.5,17.5)
+  // --- bottom band (early / teach): first fight is ONE basic, further down the
+  //     hall, so the player gets a real beat to orient and adjust before contact ---
+  makeEnemy(20.5,19,'basic'), makeEnemy(20.5,20,'basic'),
+  makeEnemy(28.5,19,'fast'),                                  // first fast — deeper, telegraphed
+  // --- lower spine + mid band (test): basics + fast mixed ---
+  makeEnemy(12.5,11.5,'basic'), makeEnemy(20.5,11.5,'basic'), makeEnemy(20.5,12.5,'fast'),
+  makeEnemy(28.5,11.5,'fast'), makeEnemy(36.5,12,'basic'),
+  makeEnemy(12.5,12.5,'tank'),                                // first TANK, mid-band room (no LOS to start)
+  // --- top band (twist): tanks + packs, harder comps ---
+  makeEnemy(12.5,4,'basic'), makeEnemy(12.5,5,'fast'), makeEnemy(20.5,4,'tank'),
+  makeEnemy(28.5,4,'basic'), makeEnemy(28.5,5,'fast'), makeEnemy(28.5,3,'basic'),
 ];
 let killCount=0; const totalEnemies=enemies.length;
+// RULE E5: no enemy in/near the player start. Assert it at load — any patient
+// within the safety radius is a bug (player must get a beat before the first threat).
+(function assertSafeStart(){
+  const SAFE=6, sx=meta.start[0], sy=meta.start[1];
+  const tooClose=enemies.filter(e=>Math.hypot(e.x-sx,e.y-sy)<SAFE);
+  if(tooClose.length) console.error('RULE E5 VIOLATION: '+tooClose.length+' enemy(s) within '+SAFE+' tiles of start');
+})();
 const RABID={ sightRange:10, wakeTelegraph:0.35, chaseSpeed:2.7, searchSpeed:1.5,
   attackRange:0.9, attackWind:0.3, attackDmg:14, attackCooldown:0.8, giveUp:6 };
 
-// ---- pistol ----
-const PISTOL={ dmg:16, cooldown:0.32, range:20, spreadFalloff:false };
+// ---- WEAPONS (data-driven arsenal) ----
+// type: 'melee' (no ammo, silent), 'hitscan' (single ray), 'pellets' (shotgun spread)
+// Balanced by range/risk/ammo, not raw DPS, so each has a moment (per spec).
+const WEAPONS={
+  fists:  {name:'FISTS',   type:'melee',   dmg:12, cooldown:0.4,  range:1.9, ammoType:null,  noise:0,  slot:1},
+  bat:    {name:'BAT',     type:'melee',   dmg:22, cooldown:0.5,  range:2.2, ammoType:null,  noise:0,  slot:2, knock:0.5},
+  sword:  {name:'SWORD',   type:'melee',   dmg:34, cooldown:0.45, range:2.5, ammoType:null,  noise:0,  slot:3, cleave:true},
+  pistol: {name:'PISTOL',  type:'hitscan', dmg:16, cooldown:0.32, range:20, ammoType:'pistol', noise:9, slot:4},
+  shotgun:{name:'SHOTGUN', type:'pellets', dmg:9,  cooldown:0.85, range:9,  ammoType:'shells', noise:12,slot:5, pellets:7, spread:0.32},
+  uzi:    {name:'UZI',     type:'hitscan', dmg:8,  cooldown:0.09, range:14, ammoType:'smg',    noise:8, slot:6, spray:0.09},
+  rifle:  {name:'RIFLE',   type:'hitscan', dmg:40, cooldown:0.75, range:30, ammoType:'rifle',  noise:11,slot:7},
+  mg:     {name:'MACHINE GUN',type:'hitscan',dmg:12,cooldown:0.07,range:22, ammoType:'mg',     noise:13,slot:8, spray:0.06},
+};
+const WEAPON_ORDER=['fists','bat','sword','pistol','shotgun','uzi','rifle','mg'];
+// what Falcon starts with and what ammo he has. Fists always; pistol to start.
+const owned={fists:true,bat:false,sword:false,pistol:true,shotgun:false,uzi:false,rifle:false,mg:false};
+const ammo={pistol:24, shells:0, smg:0, rifle:0, mg:0};
+let curWeapon='pistol';
 let fireCd=0, muzzle=0;
+
+function curW(){ return WEAPONS[curWeapon]; }
+function switchWeapon(key){
+  const w=WEAPON_ORDER.find(k=>WEAPONS[k].slot===key);
+  if(w && owned[w]){ curWeapon=w; updateWeaponHUD(); }
+}
+function nextWeapon(dir){
+  let i=WEAPON_ORDER.indexOf(curWeapon);
+  for(let n=0;n<8;n++){ i=(i+dir+8)%8; if(owned[WEAPON_ORDER[i]]){ curWeapon=WEAPON_ORDER[i]; break; } }
+  updateWeaponHUD();
+}
+function updateWeaponHUD(){
+  const w=curW();
+  const el=document.getElementById('weapon'); if(el)el.textContent=w.name;
+  const ae=document.getElementById('ammo2');
+  if(ae) ae.textContent = w.ammoType ? (ammo[w.ammoType]|0) : '∞';
+}
 
 const cv=document.getElementById('view'), ctx=cv.getContext('2d');
 const W=cv.width,H=cv.height,FOV=Math.PI/3;
@@ -322,7 +400,7 @@ function drawEnemies(){
     // corpse stays permanently — the room remembers
     let rel=Math.atan2(e.y-P.y,e.x-P.x)-P.a;while(rel>Math.PI)rel-=2*Math.PI;while(rel<-Math.PI)rel+=2*Math.PI;
     if(Math.abs(rel)>FOV/1.25)continue;
-    const size=Math.min(H*2.4,(H/d)|0), screenX=(0.5+rel/FOV)*W;
+    const size=Math.min(H*2.4,(H/d*(e.sz||1))|0), screenX=(0.5+rel/FOV)*W;
     const sp=drawPatientSprite(e), sx=screenX-size/2, sy=H/2-size/2+size*0.12;
     // LIGHT the sprite like everything else: sample the light pool at its feet,
     // apply the same ambient floor as walls, then fade with distance fog. An
@@ -334,8 +412,10 @@ function drawEnemies(){
     const tmp=document.createElement('canvas'); tmp.width=64; tmp.height=64;
     const tc=tmp.getContext('2d'); tc.drawImage(sp,0,0);
     const idata=tc.getImageData(0,0,64,64), px=idata.data;
+    const tint=e.tint;   // tank=brownish, fast=reddish, basic=none
     for(let i=0;i<px.length;i+=4){ if(px[i+3]<8)continue;
       let r=px[i]*shade, g=px[i+1]*shade, b=px[i+2]*shade;
+      if(tint){ r=r*0.55+tint[0]*0.45; g=g*0.55+tint[1]*0.45; b=b*0.55+tint[2]*0.45; }
       r=r+(FOGCOL[0]-r)*fg; g=g+(FOGCOL[1]-g)*fg; b=b+(FOGCOL[2]-b)*fg;
       px[i]=r; px[i+1]=g; px[i+2]=b;
     }
@@ -350,28 +430,72 @@ function drawEnemies(){
 // ---- pistol fire: hitscan straight down the view center ----
 function fire(){
   if(fireCd>0||dead||won)return;
-  fireCd=PISTOL.cooldown; muzzle=1;
-  // ray straight ahead; find the nearest enemy within a small angular cone AND unobstructed
-  const dx=Math.cos(P.a),dy=Math.sin(P.a);
+  const w=curW();
+  // ammo check for gun weapons
+  if(w.ammoType){ if((ammo[w.ammoType]|0)<=0){ SFX.pistolDry&&SFX.pistolDry(); fireCd=0.25; return; } }
+  fireCd=w.cooldown;
+  if(w.type==='melee'){ meleeSwing(w); return; }
+  // guns: spend ammo, muzzle flash, noise
+  ammo[w.ammoType]--; muzzle=1; updateWeaponHUD();
+  if(w.type==='pellets'){
+    // shotgun: N rays across a spread cone, each with distance falloff
+    for(let p=0;p<w.pellets;p++){
+      const a=P.a + (Math.random()-0.5)*w.spread;
+      const hit=rayHit(a, w.range);
+      if(hit){ const fall=Math.max(0.25, 1-hit.dist/w.range); hitEnemy(hit.e, w.dmg*fall, 'pellet'); }
+    }
+    SFX.shotgun ? SFX.shotgun() : SFX.pistol();
+  } else {
+    // hitscan: single ray, small spray on autos
+    const a=P.a + (w.spray? (Math.random()-0.5)*w.spray : 0);
+    const hit=rayHit(a, w.range);
+    if(hit){ hitEnemy(hit.e, w.dmg, 'bullet'); SFX.hit(hit.e.x,hit.e.y); }
+    SFX.pistol();
+  }
+  alertNoise(P.x, P.y, w.noise);
+}
+// find nearest enemy along angle a within range and line-of-sight
+function rayHit(a, range){
   let best=null,bestD=1e9;
   for(const e of enemies){ if(e.state==='dead')continue;
-    const ex=e.x-P.x,ey=e.y-P.y,dist=Math.hypot(ex,ey); if(dist>PISTOL.range)continue;
-    let rel=Math.atan2(ey,ex)-P.a;while(rel>Math.PI)rel-=2*Math.PI;while(rel<-Math.PI)rel+=2*Math.PI;
-    const aim=Math.atan2(0.45,dist);              // enemy half-width in radians
+    const ex=e.x-P.x,ey=e.y-P.y,dist=Math.hypot(ex,ey); if(dist>range)continue;
+    let rel=Math.atan2(ey,ex)-a; while(rel>Math.PI)rel-=2*Math.PI; while(rel<-Math.PI)rel+=2*Math.PI;
+    // forgiving aim: enemy "width" is generous and never shrinks below a floor,
+    // so a roughly-aimed shot at a moving target still connects (Wolf3D/Doom had
+    // strong auto-aim on purpose — the fun is the fight, not pixel-precise aim).
+    const aim=Math.max(0.14, Math.atan2(0.7*(e.sz||1),dist));
     if(Math.abs(rel)<aim && los(P.x,P.y,e.x,e.y) && dist<bestD){best=e;bestD=dist;}
   }
-  if(best){ hitEnemy(best, PISTOL.dmg); SFX.hit(best.x,best.y); }
-  SFX.pistol();
-  alertNoise(P.x, P.y, 9);        // the gunshot is loud — nearby patients investigate
+  return best?{e:best,dist:bestD}:null;
 }
-function hitEnemy(e,amount){
-  e.hp-=amount; e.hitFlash=0.08; e.dmg=Math.min(1,1-e.hp/30);
-  // knockback + stagger scaled by (1-mass)
-  const kb=(1-e.mass)*0.25, dx=Math.cos(P.a),dy=Math.sin(P.a);
+// melee: hit everything in a short arc in front (cleave weapons hit 2+)
+function meleeSwing(w){
+  muzzle=0.3;
+  SFX.melee ? SFX.melee() : SFX.hit(P.x,P.y);
+  let hits=0;
+  const targets=enemies.filter(e=>e.state!=='dead').map(e=>{
+    const dist=Math.hypot(e.x-P.x,e.y-P.y);
+    let rel=Math.atan2(e.y-P.y,e.x-P.x)-P.a; while(rel>Math.PI)rel-=2*Math.PI; while(rel<-Math.PI)rel+=2*Math.PI;
+    return {e,dist,rel};
+  }).filter(t=>t.dist<=w.range && Math.abs(t.rel)<0.9).sort((a,b)=>a.dist-b.dist);
+  for(const t of targets){
+    hitEnemy(t.e, w.dmg, 'melee'); SFX.hit(t.e.x,t.e.y);
+    hits++; if(!w.cleave || hits>=2) break;    // fists/bat hit 1, sword cleaves 2
+  }
+  // melee is silent — no alertNoise (stealth option per spec)
+}
+function hitEnemy(e,amount,dtype){
+  // per-enemy damage-type multipliers (Patient: soft, explosives/melee land hard).
+  // Enemy variants (tank/fast) will tune these; Patient defaults ~1.
+  const mult={bullet:1.0, pellet:1.0, melee:1.1, explosive:1.4, fire:1.0}[dtype||'bullet']||1;
+  amount*=mult * (e.dmgMult&&e.dmgMult[dtype]!=null?e.dmgMult[dtype]:1);
+  e.hp-=amount; e.hitFlash=0.08; e.dmg=Math.min(1,1-e.hp/e.maxhp);
+  // knockback + stagger scaled by (1-mass); melee & pellets knock harder up close
+  const kb=(1-e.mass)*0.25*(dtype==='melee'||dtype==='pellet'?1.6:1), dx=Math.cos(P.a),dy=Math.sin(P.a);
   if(!solid(e.x+dx*kb,e.y))e.x+=dx*kb; if(!solid(e.x,e.y+dy*kb))e.y+=dy*kb;
   e.staggerT=Math.max(e.staggerT,(1-e.mass)*0.25);
   if(e.hp<=0){ e.state='dead'; e.t=0; spawnBlood(e); killCount++; SFX.death(e.x,e.y);
-    quip();   // Falcon cracks wise — he thinks these are just monsters
+    quip();
   }
   else if(e.state==='dormant'){ wake(e); }
 }
@@ -439,12 +563,13 @@ function spawnBlood(e){
 // can this enemy currently SEE the player? (cone + range + line of sight)
 function canSee(e){
   const dx=P.x-e.x, dy=P.y-e.y, dist=Math.hypot(dx,dy);
-  if(dist>RABID.sightRange) return false;
+  const sr=e.sight||RABID.sightRange;
+  if(dist>sr) return false;
   if(!los(e.x,e.y,P.x,P.y)) return false;
   // in the dark, sight range shrinks — a player standing in shadow is harder to
   // spot. Use the light level at the PLAYER's position as visibility.
   const vis=0.35+lightAt(P.x,P.y);          // lurk in darkness = seen later
-  return dist < RABID.sightRange*Math.min(1,vis);
+  return dist < sr*Math.min(1,vis);
 }
 function moveToward(e,tx,ty,speed,dt){
   const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d,step=speed*dt;
@@ -473,7 +598,25 @@ function updateEnemies(dt){
     else    { e.confirm=Math.max(0,e.confirm-dt*0.8); }
 
     if(e.state==='dormant'){
-      if(sees && e.confirm>0.4){ wake(e); }
+      if(sees && e.confirm>0.4){ wake(e); continue; }
+      // idle shuffle: patients mill restlessly near their home spot instead of
+      // standing frozen. Slow, intermittent, bounded — so a corner you passed
+      // can hold one that wasn't there a moment ago, but they don't all drift off.
+      if(e.idle){
+        e.idleT-=dt;
+        if(e.idleT<=0){                          // pick a new micro-goal or pause
+          if(Math.random()<0.4){ e.idleMoving=false; e.idleT=1+Math.random()*3; }  // pause
+          else { e.idleMoving=true; e.idleT=0.6+Math.random()*1.4;
+            e.wanderA=Math.random()*6.28; }
+        }
+        if(e.idleMoving){
+          const step=0.6*dt;                     // shuffle speed (slow)
+          const nx=e.x+Math.cos(e.wanderA)*step, ny=e.y+Math.sin(e.wanderA)*step;
+          // stay within a small radius of home, and don't walk through walls
+          if(Math.hypot(nx-e.hx,ny-e.hy)<e.roam && !solid(nx,ny)){ e.x=nx; e.y=ny; }
+          else { e.wanderA=Math.atan2(e.hy-e.y,e.hx-e.x)+(Math.random()-0.5); } // turn back toward home
+        }
+      }
       continue;
     }
     if(e.state==='alert'){
@@ -482,10 +625,10 @@ function updateEnemies(dt){
     }
     if(e.state==='chase'){
       if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; SFX.attack(e.x,e.y); continue; }
-      if(sees){ e.lkx=P.x; e.lky=P.y; moveToward(e,P.x,P.y,RABID.chaseSpeed,dt); }
+      if(sees){ e.lkx=P.x; e.lky=P.y; moveToward(e,P.x,P.y,e.chase||RABID.chaseSpeed,dt); }
       else {
         // lost sight — go to last-known position, then start searching
-        const d=moveToward(e,e.lkx,e.lky,RABID.chaseSpeed*0.85,dt);
+        const d=moveToward(e,e.lkx,e.lky,(e.chase||RABID.chaseSpeed)*0.85,dt);
         if(d<0.6){ e.state='search'; e.t=0; e.searchT=0; e.wanderA=Math.random()*6.28; }
       }
       continue;
@@ -504,7 +647,7 @@ function updateEnemies(dt){
     }
     if(e.state==='attack'){
       if(e.t>=RABID.attackWind){
-        if(dist<=RABID.attackRange+0.3){ hurtPlayer(RABID.attackDmg); }
+        if(dist<=RABID.attackRange+0.3){ hurtPlayer(e.atkDmg||RABID.attackDmg); }
         e.state='chase'; e.t=-RABID.attackCooldown;
       }
     }
@@ -545,8 +688,6 @@ function initAudio(){
   if(AC) return;
   try{ AC=new (window.AudioContext||window.webkitAudioContext)();
     master=AC.createGain(); master.gain.value=0.85; master.connect(AC.destination);
-    musicBus=AC.createGain(); musicBus.gain.value=0.0; musicBus.connect(master);
-    startMusic();
   }catch(e){ AC=null; }
 }
 // positional gain+pan from a world point relative to the player's facing
@@ -577,8 +718,11 @@ function noise({dur=0.2,vol=0.3,pan=0,lp=1200,hp=0}){
   const src=AC.createBufferSource(); src.buffer=buf;
   const g=AC.createGain(); g.gain.value=vol;
   const f=AC.createBiquadFilter(); f.type='lowpass'; f.frequency.value=lp;
+  src.connect(f);
+  let tail=f;
+  if(hp>0){ const hpf=AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=hp; f.connect(hpf); tail=hpf; }
+  tail.connect(g);
   const pn=AC.createStereoPanner?AC.createStereoPanner():null;
-  src.connect(f); f.connect(g);
   if(pn){pn.pan.value=pan;g.connect(pn);pn.connect(master);} else g.connect(master);
   src.start(t);
 }
@@ -592,6 +736,35 @@ const SFX={
     tone({freq:780,type:'sawtooth',dur:0.45,vol:0.3*m.g,pan:m.pan,slideTo:240}); },
   moan(wx,wy){ const m=posMix(wx,wy,11); if(m.g<0.02)return;
     tone({freq:90+Math.random()*40,type:'sawtooth',dur:0.6+Math.random()*0.5,vol:0.3*m.g,pan:m.pan,slideTo:70}); },
+  // ---- creepy ambient vocalizations ----
+  // a distant laugh — deliberately quiet and hard-panned so it feels far off and
+  // un-findable. Randomized pan/pitch each time.
+  distantLaugh(){ const pan=Math.random()*2-1; const base=180+Math.random()*120;
+    for(let i=0;i<4+((Math.random()*3)|0);i++){ setTimeout(()=>{
+      tone({freq:base*(0.9+Math.random()*0.3),type:'sawtooth',dur:0.12,vol:0.09,pan:pan,slideTo:base*0.7,attack:0.005});
+    }, i*130); } },
+  // a long far-off wail — mournful, sourceless
+  distantWail(){ const pan=Math.random()*2-1;
+    tone({freq:260+Math.random()*80,type:'sawtooth',dur:1.6+Math.random(),vol:0.08,pan:pan,slideTo:150,attack:0.4});
+    tone({freq:390,type:'sine',dur:1.4,vol:0.04,pan:pan,slideTo:220,attack:0.4}); },
+  // muttering / gibbering whispers, close-ish, unsettling
+  whisper(wx,wy){ const m=posMix(wx,wy,9); if(m.g<0.03)return;
+    for(let i=0;i<3;i++) setTimeout(()=>noise({dur:0.08,vol:0.06*m.g,pan:m.pan,lp:1800,hp:600}), i*110); },
+  // a bang/thump — a patient hitting a wall or door somewhere
+  distantBang(){ const pan=Math.random()*2-1;
+    noise({dur:0.16,vol:0.13,pan:pan,lp:400}); tone({freq:70,type:'square',dur:0.14,vol:0.12,pan:pan,slideTo:40}); },
+  // ---- RABID: continuous chaos when they see you ----
+  // a ragged screaming shout, layered and harsh — spammed while a patient chases
+  rabidScream(wx,wy){ const m=posMix(wx,wy,14); if(m.g<0.04)return;
+    const f=440+Math.random()*260;
+    tone({freq:f,type:'sawtooth',dur:0.3+Math.random()*0.25,vol:0.4*m.g+0.06,pan:m.pan,slideTo:f*0.5,attack:0.01});
+    tone({freq:f*1.5,type:'square',dur:0.2,vol:0.2*m.g,pan:m.pan,slideTo:f*0.8});
+    noise({dur:0.18,vol:0.14*m.g,pan:m.pan,lp:2600,hp:500}); },
+  // frenzied gibbering shout (variation, so it's not one repeated sound)
+  rabidShout(wx,wy){ const m=posMix(wx,wy,14); if(m.g<0.04)return;
+    for(let i=0;i<2+((Math.random()*2)|0);i++) setTimeout(()=>{
+      tone({freq:300+Math.random()*400,type:'sawtooth',dur:0.1,vol:0.28*m.g+0.04,pan:m.pan,slideTo:200,attack:0.005});
+    }, i*90); },
   attack(wx,wy){ const m=posMix(wx,wy,10);
     tone({freq:300,type:'square',dur:0.2,vol:0.5*m.g+0.1,pan:m.pan,slideTo:900}); },
   playerHurt(){ tone({freq:200,type:'sawtooth',dur:0.28,vol:0.6,slideTo:80});
@@ -601,7 +774,9 @@ const SFX={
     noise({dur:0.45,vol:0.4*m.g,pan:m.pan,lp:900}); },
   win(){ [0,4,7,12].forEach((s,i)=>setTimeout(()=>tone({freq:220*Math.pow(2,s/12),type:'triangle',dur:0.35,vol:0.4}),i*140)); },
   lose(){ tone({freq:300,type:'sawtooth',dur:1.3,vol:0.55,slideTo:40}); },
-  pickup(){ tone({freq:660,type:'triangle',dur:0.12,vol:0.35}); tone({freq:990,type:'triangle',dur:0.18,vol:0.25}); }
+  pickup(){ tone({freq:660,type:'triangle',dur:0.12,vol:0.35}); tone({freq:990,type:'triangle',dur:0.18,vol:0.25}); },
+  shotgun(){ noise({dur:0.22,vol:0.95,lp:2400}); tone({freq:120,type:'square',dur:0.16,vol:0.5,slideTo:40}); noise({dur:0.08,vol:0.5,lp:5000,hp:1500}); },
+  melee(){ noise({dur:0.09,vol:0.4,lp:1400,hp:200}); tone({freq:150,type:'triangle',dur:0.1,vol:0.3,slideTo:80}); }
 };
 /* ---- MUSIC: a synthesized horror score ----
    Two beds. A low, always-present drone (dread you can't shake), and a tension
@@ -609,55 +784,90 @@ const SFX={
    "tension budget" made audible. Plus an occasional sparse detuned piano-ish
    note for that abandoned-asylum feel. All oscillators, no files. */
 let musicNodes=[], pianoClock=6;
-function startMusic(){
-  if(!AC) return;
-  // drone: two detuned low saws through a slow lowpass — the bed
-  const droneG=AC.createGain(); droneG.gain.value=0.12; droneG.connect(musicBus);
-  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=340; lp.connect(droneG);
-  [55, 55.4, 82.5].forEach(f=>{ const o=AC.createOscillator(); o.type='sawtooth';
-    o.frequency.value=f; o.connect(lp); o.start(); musicNodes.push(o); });
-  // tension layer: a dissonant high cluster, gain driven live by threat level
-  tensionG=AC.createGain(); tensionG.gain.value=0.0; tensionG.connect(musicBus);
-  const tlp=AC.createBiquadFilter(); tlp.type='bandpass'; tlp.frequency.value=1200; tlp.Q.value=6; tlp.connect(tensionG);
-  [220, 233, 466].forEach(f=>{ const o=AC.createOscillator(); o.type='sawtooth';
-    o.frequency.value=f; o.connect(tlp); o.start(); musicNodes.push(o); });
-  // fade the whole music bus in once it's running
-  musicBus.gain.linearRampToValueAtTime(0.9, AC.currentTime+3);
+/* ---- MUSIC: real tracks from /music/*.mp3 (Fear Factory-style metal) ----
+   Music: one menu track loops on the title screen; in-game, the rest play as a
+   continuous playlist — one after another, looping. Simple and reliable. */
+const MENU_TRACK='music/TRACK7.mp3';
+const PLAYLIST=[   // in-game tracks, played in order then looped
+  'music/track1.mp3','music/track2.mp3','music/track3.mp3','music/track4.mp3',
+  'music/track5.mp3','music/track6.mp3','music/track8.mp3'
+];
+const MUSIC_VOL=0.6;
+let menuMusic=null, gameMusic=null, playIdx=0, musicMode='none';
+function makeAudio(src, loop, vol){
+  const a=new Audio(src); a.loop=loop; a.volume=vol; a.preload='auto'; return a;
 }
-let tensionG=null, musicClock=0;
-function updateMusic(dt){
-  if(!AC||!tensionG) return;
-  // threat = how many awake patients, weighted by nearness
-  let threat=0;
-  for(const e of enemies){ if(e.state==='dead'||e.state==='dormant')continue;
-    const d=Math.hypot(e.x-P.x,e.y-P.y); threat+=Math.max(0,1-d/14)*(e.state==='chase'||e.state==='attack'?1.4:0.7); }
-  threat=Math.min(1.2,threat);
-  // smooth the tension gain toward the threat level
-  const target=threat*0.16;
-  tensionG.gain.setTargetAtTime(target, AC.currentTime, 0.4);
-  // sparse detuned piano note when it's quiet — abandoned-asylum unease
-  pianoClock-=dt;
-  if(pianoClock<=0 && threat<0.3){ pianoClock=5+Math.random()*7;
-    const notes=[196,220,262,294,175]; const f=notes[(Math.random()*notes.length)|0]*(Math.random()<0.5?1:0.5);
-    const o=AC.createOscillator(),g=AC.createGain(); o.type='triangle';
-    o.frequency.value=f*(1+(Math.random()-0.5)*0.01);       // slightly out of tune
-    g.gain.setValueAtTime(0,AC.currentTime); g.gain.linearRampToValueAtTime(0.14,AC.currentTime+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+2.2);
-    o.connect(g); g.connect(musicBus); o.start(); o.stop(AC.currentTime+2.3);
-  }
+function startMenuMusic(){
+  if(musicMode==='menu') return;
+  stopAllMusic();
+  menuMusic=makeAudio(MENU_TRACK, true, MUSIC_VOL);
+  menuMusic.play().catch(()=>{});
+  musicMode='menu';
 }
+function startGameMusic(){
+  stopAllMusic();
+  musicMode='game';
+  playIdx=0;
+  gameMusic=makeAudio(PLAYLIST[playIdx], false, MUSIC_VOL);
+  gameMusic.addEventListener('ended', nextTrack);
+  gameMusic.play().catch(()=>{});
+}
+function nextTrack(){
+  if(musicMode!=='game'||!gameMusic) return;
+  playIdx=(playIdx+1)%PLAYLIST.length;         // loop the playlist
+  gameMusic.src=PLAYLIST[playIdx];
+  gameMusic.currentTime=0;
+  gameMusic.play().catch(()=>{});
+}
+function stopAllMusic(){
+  for(const a of [menuMusic,gameMusic]){ if(a){ a.pause(); } }
+}
+// startMusic() kept as the name the ENTER click calls — now starts the in-game playlist
+function startMusic(){ startGameMusic(); }
+function updateMusic(dt){ /* continuous playlist advances itself via 'ended' */ }
 
-// ambient moan scheduler: nearby awake enemies moan on a loose timer
-let moanClock=0;
+// ---- the living soundscape ----
+// Three independent layers, so the asylum is never silent:
+//  1. DISTANT AMBIENCE — sourceless laughs, wails, bangs. Always playing, quiet,
+//     hard-panned so they feel far off and un-findable. This is the dread bed.
+//  2. IDLE VOCALS — dormant patients moan/whisper/gibber near the player.
+//  3. RABID CHAOS — any chasing/attacking patient screams and shouts continuously.
+let moanClock=1, laughClock=6, wailClock=10, bangClock=8, rabidClock=0;
 function updateAmbientSound(dt){
   if(!AC) return;
+
+  // 1. distant ambience — independent of any enemy, always going
+  laughClock-=dt;
+  if(laughClock<=0){ laughClock=12+Math.random()*22;    // a laugh every ~12-34s
+    SFX.distantLaugh(); }
+  wailClock-=dt;
+  if(wailClock<=0){ wailClock=9+Math.random()*16;
+    SFX.distantWail(); }
+  bangClock-=dt;
+  if(bangClock<=0){ bangClock=7+Math.random()*12;
+    SFX.distantBang(); }
+
+  // 2. idle vocals — dormant patients near the player moan or mutter
   moanClock-=dt;
-  if(moanClock<=0){ moanClock=0.7+Math.random()*1.1;
-    // pick the nearest awake-ish enemy and moan from it
+  if(moanClock<=0){ moanClock=1.4+Math.random()*2.2;
     let near=null,nd=99;
-    for(const e of enemies){ if(e.state==='dead'||e.state==='dormant')continue;
+    for(const e of enemies){ if(e.state==='dead')continue;
+      if(e.state!=='dormant'&&e.state!=='search')continue;
       const d=Math.hypot(e.x-P.x,e.y-P.y); if(d<nd){nd=d;near=e;} }
-    if(near && nd<11) SFX.moan(near.x,near.y);
+    if(near && nd<11){ if(Math.random()<0.5) SFX.moan(near.x,near.y); else SFX.whisper(near.x,near.y); }
+  }
+
+  // 3. rabid chaos — patients that can see/are chasing you scream constantly
+  rabidClock-=dt;
+  if(rabidClock<=0){ rabidClock=0.35+Math.random()*0.5;   // fast cadence = frenzy
+    for(const e of enemies){
+      if(e.state==='chase'||e.state==='attack'||e.state==='alert'){
+        const d=Math.hypot(e.x-P.x,e.y-P.y);
+        if(d<15 && Math.random()<0.6){                     // not every one every tick
+          if(Math.random()<0.5) SFX.rabidScream(e.x,e.y); else SFX.rabidShout(e.x,e.y);
+        }
+      }
+    }
   }
 }
 
@@ -665,8 +875,12 @@ function updateAmbientSound(dt){
 const keys={};
 addEventListener('keydown',e=>{const k=(e.key||'').toLowerCase();keys[k]=true;
   if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault();
-  if(k===' ')fire();});
+  if(k===' ')fire();
+  if(k>='1'&&k<='8') switchWeapon(parseInt(k));      // number keys select weapon
+  if(k==='tab'){ e.preventDefault(); nextWeapon(1); } // tab cycles
+});
 addEventListener('keyup',e=>{keys[(e.key||'').toLowerCase()]=false;});
+addEventListener('wheel',e=>{ if(running){ nextWeapon(e.deltaY>0?1:-1); e.preventDefault(); } },{passive:false});
 let dragging=false,lastX=0;
 cv.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;fire();});
 addEventListener('mouseup',()=>dragging=false);
@@ -695,8 +909,12 @@ function step(dt){
 }
 let last=performance.now();
 function loop(now){const dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;step(dt);render();requestAnimationFrame(loop);}
+// menu music starts on the first user interaction with the title (autoplay rule)
+function armMenuMusic(){ startMenuMusic(); window.removeEventListener('pointerdown',armMenuMusic); window.removeEventListener('keydown',armMenuMusic); }
+window.addEventListener('pointerdown',armMenuMusic); window.addEventListener('keydown',armMenuMusic);
+
 document.getElementById('go').onclick=()=>{document.getElementById('tap').style.display='none';running=true;last=performance.now();
-  initAudio(); if(AC&&AC.state==='suspended')AC.resume();};
+  initAudio(); if(AC&&AC.state==='suspended')AC.resume(); startGameMusic();};
 
 // ---- end-of-floor card: seeds the first quiet hint of the truth ----
 function showEndCard(){
