@@ -787,10 +787,10 @@ let musicNodes=[], pianoClock=6;
 /* ---- MUSIC: real tracks from /music/*.mp3 (Fear Factory-style metal) ----
    Music: one menu track loops on the title screen; in-game, the rest play as a
    continuous playlist — one after another, looping. Simple and reliable. */
-const MENU_TRACK='music/TRACK7.mp3';
+const MENU_TRACK='music/track7.mp3';
 const PLAYLIST=[   // in-game tracks, played in order then looped
-  'music/track1.mp3','music/track2.mp3','music/track3.mp3','music/track4.mp3',
-  'music/track5.mp3','music/track6.mp3','music/track8.mp3'
+  'music/track1.mp3','music/track2.mp3','music/track3.mp3',
+  'music/track4.mp3','music/track5.mp3','music/track6.mp3'
 ];
 const MUSIC_VOL=0.6;
 let menuMusic=null, gameMusic=null, playIdx=0, musicMode='none';
