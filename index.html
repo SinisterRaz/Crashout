@@ -89,6 +89,24 @@
   <div id="mprespawn" style="display:none">ELIMINATED</div>
   <div id="mpboard" style="display:none"></div>
 </div>
+<div id="mplobbyscreen" class="card" style="display:none">
+  <div class="cardwrap" style="min-width:440px">
+    <h2 id="lob_mode" style="color:#c33;letter-spacing:4px;margin-bottom:2px">DEATHMATCH</h2>
+    <div id="lob_status" style="color:#888;font-size:12px;letter-spacing:2px;margin-bottom:12px">LOBBY</div>
+    <div id="lob_rosters" style="display:flex;gap:22px;justify-content:center;margin-bottom:14px;text-align:left"></div>
+    <div style="color:#888;letter-spacing:3px;font-size:11px;margin:4px 0">MAP VOTE</div>
+    <div id="lob_maps" style="display:flex;gap:10px;justify-content:center;margin-bottom:14px;flex-wrap:wrap"></div>
+    <div id="lob_foot"></div>
+  </div>
+</div>
+<div id="mppost" class="card" style="display:none">
+  <div class="cardwrap" style="min-width:440px">
+    <h1 id="post_title" style="letter-spacing:4px">MATCH OVER</h1>
+    <div id="post_sub" style="color:#aaa;letter-spacing:2px;margin:-6px 0 14px"></div>
+    <div id="post_board" style="max-width:380px;margin:0 auto 16px"></div>
+    <div><button id="post_again" style="font-size:16px;padding:9px 22px">PLAY AGAIN</button> <button id="post_leave">LEAVE</button></div>
+  </div>
+</div>
 
 <!-- SETTINGS panel -->
 <div id="settings" class="card" style="display:none">
@@ -152,6 +170,16 @@
 <style>
 #mphud{position:fixed;inset:0;pointer-events:none;font-family:inherit;z-index:50}
 #mpscore{position:absolute;top:6px;left:50%;transform:translateX(-50%);color:#eee;font-size:13px;letter-spacing:2px;text-shadow:0 0 4px #000}
+/* compact COD lobby / post-match for the 480x270 screen */
+#mplobbyscreen .cardwrap,#mppost .cardwrap{max-width:94%;max-height:96%;overflow:auto}
+#lob_mode{font-size:17px;letter-spacing:4px;margin:0 0 1px;color:#c33}
+#lob_status{font-size:11px;margin-bottom:8px}
+#lob_rosters{font-size:12px}
+#lob_maps button{display:inline-block;width:auto;margin:0;padding:5px 12px;font-size:12px;letter-spacing:1px}
+#lob_foot button,#mppost button{margin-top:6px;padding:7px 16px;font-size:13px;letter-spacing:2px}
+#post_title{font-size:22px;margin:0 0 1px}
+#post_sub{font-size:12px;margin:0 0 8px}
+#post_board{font-size:11px}
 #mpfeed{position:absolute;top:26px;left:8px;color:#f88;font-size:10px;line-height:1.5;text-shadow:0 0 3px #000}
 #mprespawn{position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);color:#c33;font-size:20px;letter-spacing:3px;text-shadow:0 0 6px #000}
 #mpboard{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(10,8,8,0.92);border:1px solid #533;padding:16px 26px;min-width:260px;font-size:12px;text-align:left}
@@ -501,6 +529,12 @@ function makeTex(kind){const S=64,data=new Uint8ClampedArray(S*S*3);
     else if(kind==='concBlood'){let base=64+(R()*18-9);r=base*0.92;g=base*0.94;b=base;
       const bleedCol=Math.sin(x*0.6+1)*Math.sin(x*1.9);if(bleedCol>0.35){const bl=Math.max(0,(y/S-0.02))*(0.6+R()*0.35);
         r=r*(1-bl)+120*bl;g=g*(1-bl)+14*bl;b=b*(1-bl)+16*bl;}if(R()<0.05){r*=0.7;g*=0.7;b*=0.72;}}
+    else if(kind==='brick'){const ch=8,bw=16,row=(y/ch)|0,off=(row%2)?bw/2:0,bx=((x+off)%bw),by=y%ch;
+      if(by<1||bx<1){r=58;g=52;b=48;}else{r=150+(R()*30-15);g=72+(R()*18-9);b=56+(R()*14-7);}
+      if(R()<0.06){r*=0.7;g*=0.7;b*=0.7;}const gr=Math.sin(x*0.2)*Math.sin(y*0.3);if(gr>0.6){r*=0.72;g*=0.74;b*=0.72;}}
+    else if(kind==='bars'){const bx=x%8;if(bx<3){let base=78+(R()*22-11);r=base*0.92;g=base*0.9;b=base*0.86;if(bx===0){r=130;g=132;b=138;}if(bx===2){r*=0.5;g*=0.5;b*=0.52;}const rs=Math.sin(y*0.2+x)*Math.sin(y*0.11);if(rs>0.6){r=r*0.6+110*0.4;g=g*0.6+50*0.4;b=b*0.6+28*0.4;}}else{r=20;g=18;b=22;if(R()<0.05){r+=18;g+=18;b+=22;}}if(y%28<2){r=86;g=84;b=80;}}
+    else if(kind==='padded'){const q=16,qx=x%q,qy=y%q,dx=qx-8,dy=qy-8,dist=Math.sqrt(dx*dx+dy*dy),bulge=Math.max(0,1-dist/11);let base=(170+(R()*18-9))*(0.82+0.3*bulge);r=base*0.96;g=base*0.93;b=base*0.8;if(qx<1||qy<1){r*=0.55;g*=0.55;b*=0.5;}if(Math.abs(dx)<1.5&&Math.abs(dy)<1.5){r*=0.45;g*=0.45;b*=0.42;}const st=Math.sin(x*0.15+3)*Math.sin(y*0.12);if(st>0.55){r*=0.72;g*=0.72;b*=0.62;}}
+    else if(kind==='pooltile'){const t=8,gx=x%t,gy=y%t;if(gx<1||gy<1){r=58;g=70;b=70;}else{let base=120+(R()*22-11);r=base*0.5;g=base*0.82;b=base*0.8;}const wet=(Math.sin(x*0.5)>0.6)?Math.max(0,y/S)*0.5:0;r=r*(1-wet)+36*wet;g=g*(1-wet)+54*wet;b=b*(1-wet)+60*wet;if(R()<0.04){r*=0.72;g*=0.72;b*=0.74;}}
     else{const base=90+(R()*24-12);r=g=b=base;}
     put(x,y,r,g,b);}
   return {w:S,h:S,data};}
@@ -3386,7 +3420,7 @@ document.querySelectorAll('.lvlsel').forEach(b=>{
   b.onclick=()=>beginAt(+b.getAttribute('data-lvl'));
 });
 // ---- MAIN MENU routing: CAMPAIGN vs MULTIPLAYER (shared engine, one file) ----
-const _show=(id)=>{ for(const c of ['mainmenu','tap','mplobby','settings','mpsetup']){ const el=document.getElementById(c); if(el)el.style.display = (c===id)?'flex':'none'; } const _mh=document.getElementById('mphud'); if(_mh)_mh.style.display='none'; };
+const _show=(id)=>{ for(const c of ['mainmenu','tap','mplobby','settings','mpsetup','mplobbyscreen','mppost']){ const el=document.getElementById(c); if(el)el.style.display = (c===id)?'flex':'none'; } const _mh=document.getElementById('mphud'); if(_mh)_mh.style.display='none'; };
 // ===================== MULTIPLAYER MODULE =====================
 /* ══════════════════════════════════════════════════════════════════════════
    MULTIPLAYER — Firebase Realtime Database, shared engine, single file.
@@ -3421,7 +3455,6 @@ function buildTwinWards(){
   c(9,11,15,14); c(24,11,30,14);
   c(5,3,34,4); c(6,4,6,9); c(33,4,33,9); c(19,4,20,7);
   c(5,21,34,22); c(6,16,6,21); c(33,16,33,21); c(19,18,20,21);
-  _rect(g,4,10,5,10,'T'); _rect(g,34,10,35,10,'T');
   const sR=[[5.5,11.5],[5.5,14.5],[7.5,10.5],[7.5,15.5]];
   const sB=[[34.5,11.5],[34.5,14.5],[32.5,10.5],[32.5,15.5]];
   return {name:'TWIN WARDS',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
@@ -3436,7 +3469,7 @@ function buildThePit(){
   const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
   c(11,8,20,15); c(15,2,16,8); c(15,15,16,21); c(2,11,11,12); c(20,11,29,12);
   c(13,2,18,4); c(13,19,18,21); c(2,9,4,14); c(27,9,29,14);
-  _rect(g,13,11,13,12,'#'); _rect(g,18,11,18,12,'#'); _rect(g,4,10,5,10,'T');
+  _rect(g,13,11,13,12,'#'); _rect(g,18,11,18,12,'#');
   const co=[[15.5,11.5],[16.5,12.5],[14.5,12.5],[16.5,11.5]];
   const z=[[15.5,3],[15.5,20.5],[3,11.5],[28,11.5]];
   return {name:'THE PIT',map:_toStr(g),spawns:co,redSpawns:co,blueSpawns:co,bases:{},flags:{},
@@ -3446,32 +3479,172 @@ function buildThePit(){
       {x:28,y:11.5,r:5,i:0.45,col:[.6,1,.5]}],
     fog:[7,9,10],darkness:0.2};
 }
-const ARENAS=[buildTwinWards(),buildThePit()];
-function arenaToLevel(a){
-  return { name:a.name, map:a.map,
-    tex:()=>({1:makeTex('plaster'),4:makeTex('tile')}),
-    lights:a.lights||[], fog:a.fog||[9,10,11], darkness:a.darkness||0.12,
-    props:[], pickups:()=>a._pickups||[], enemies:()=>[], objective:a.name };
+function buildMorgue(){
+  const W=36,H=26,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(13,7,22,18);                       // central slab hall
+  // 2x2 slab pillars in a staggered grid (cover, blocks straight center LOS)
+  _rect(g,15,9,16,10,'#'); _rect(g,19,9,20,10,'#');
+  _rect(g,17,12,18,13,'#');            // dead-center breaker
+  _rect(g,15,15,16,16,'#'); _rect(g,19,15,20,16,'#');
+  c(2,9,8,16); c(27,9,33,16);          // bases L/R
+  c(8,11,13,14); c(22,11,27,14);       // base->hall
+  c(4,3,31,4); c(5,4,5,9); c(30,4,30,9); c(17,4,18,7);   // top flank + links
+  c(4,21,31,22); c(5,16,5,21); c(30,16,30,21); c(17,18,18,21); // bottom flank + links
+  const sR=[[4.5,11.5],[4.5,14.5],[6.5,10.5],[6.5,15.5]];
+  const sB=[[30.5,11.5],[30.5,14.5],[28.5,10.5],[28.5,15.5]];
+  return {name:'MORGUE',type:'pvp',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
+    bases:{red:[4.5,12.5],blue:[30.5,12.5]},flags:{red:[4.5,12.5],blue:[30.5,12.5]},
+    lights:[{x:17.5,y:12.5,r:13,i:0.95,col:[.75,.88,1]},{x:4.5,y:12.5,r:6,i:0.8,col:[1,.5,.4]},
+      {x:30.5,y:12.5,r:6,i:0.8,col:[.5,.6,1]},{x:17,y:3.5,r:8,i:0.45,flicker:true,col:[.6,.8,.9]},
+      {x:17,y:21.5,r:8,i:0.45,flicker:true,col:[.6,.8,.9]}],
+    fog:[8,11,13],darkness:0.14};
 }
-// symmetric arena pickups (weapons/ammo/health) — mirrored so neither side is favoured
+function buildCellBlock(){
+  const W=44,H=20,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(2,4,41,6);   c(2,13,41,15);        // top & bottom cell corridors
+  c(2,7,4,12); c(39,7,41,12);          // base ends (L/R) linking the two corridors
+  // cross links between corridors at intervals
+  c(11,6,12,13); c(20,6,21,13); c(23,6,24,13); c(31,6,32,13);
+  // central guard station (solid box) breaks the long central LOS; corridors go around
+  c(19,8,24,11); _rect(g,20,9,23,10,'#');
+  // cell alcoves (visual pockets) off top/bottom
+  for(const x of [7,15,28,36]){ c(x,2,x+2,3); c(x,16,x+2,17); }
+  for(let x=5;x<=38;x++){ if(g[3][x]==='#')g[3][x]='B'; if(g[16][x]==='#')g[16][x]='B'; }
+  const sR=[[3.5,8.5],[3.5,10.5],[5.5,5.5],[5.5,14.5]];
+  const sB=[[40.5,8.5],[40.5,10.5],[38.5,5.5],[38.5,14.5]];
+  return {name:'CELL BLOCK D',type:'pvp',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
+    bases:{red:[3.5,9.5],blue:[40.5,9.5]},flags:{red:[3.5,9.5],blue:[40.5,9.5]},
+    lights:[{x:5,y:9.5,r:6,i:0.8,col:[1,.5,.4]},{x:39,y:9.5,r:6,i:0.8,col:[.5,.6,1]},
+      {x:12,y:5,r:6,i:0.5,flicker:true},{x:32,y:14,r:6,i:0.5,flicker:true},
+      {x:21,y:5,r:6,i:0.55,col:[1,.9,.7]},{x:21,y:14,r:6,i:0.55,col:[1,.9,.7]}],
+    fog:[9,10,12],darkness:0.16};
+}
+function buildChapel(){
+  const W=32,H=28,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(6,3,25,24);                         // main nave (big room)
+  // side aisles (flank routes) separated by column rows
+  for(let y=6;y<=21;y+=3){ _rect(g,10,y,10,y+1,'#'); _rect(g,21,y,21,y+1,'#'); }  // colonnades
+  // pew cover blocks down the center
+  for(let y=8;y<=19;y+=4){ _rect(g,14,y,17,y,'#'); }
+  // altar screen bases top & bottom (mirror vertical) -> but CTF wants L/R; use top/bottom w/ vertical symmetry
+  _rect(g,13,5,18,5,'#'); _rect(g,13,22,18,22,'#');   // altar screens (break end-to-end LOS)
+  c(13,2,18,4); c(13,23,18,25);         // altar alcoves behind screens = bases
+  const sR=[[15.5,3.5],[13.5,3.5],[17.5,3.5],[15.5,6.5]];   // red = top altar
+  const sB=[[15.5,24.5],[13.5,24.5],[17.5,24.5],[15.5,21.5]]; // blue = bottom altar
+  return {name:'CHAPEL',type:'pvp',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
+    bases:{red:[15.5,3.5],blue:[15.5,24.5]},flags:{red:[15.5,3.5],blue:[15.5,24.5]},
+    lights:[{x:15.5,y:13.5,r:10,i:0.6,col:[1,.85,.7]},{x:15.5,y:3.5,r:6,i:0.8,col:[1,.5,.4]},
+      {x:15.5,y:24.5,r:6,i:0.8,col:[.5,.6,1]},{x:8,y:13,r:7,i:0.4,flicker:true},{x:23,y:13,r:7,i:0.4,flicker:true}],
+    fog:[9,9,12],darkness:0.15};
+}
+function buildYard(){
+  const W=34,H=26,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(3,3,30,22);                         // open yard
+  // central bunker (holdout) with one doorway each side
+  _rect(g,13,10,20,15,'#'); c(16,10,17,10); c(16,15,17,15); c(13,12,13,13); c(20,12,20,13);
+  c(14,11,19,14);                       // bunker interior
+  // scattered cover crates
+  for(const [x,y] of [[7,7],[26,7],[7,18],[26,18],[16,5],[16,20]]) _rect(g,x,y,x+1,y+1,'#');
+  // perimeter ingress notches (zombie spawn mouths just inside the wall)
+  const z=[[3,4],[30,4],[3,21],[30,21],[16,3],[16,22]];
+  const co=[[16.5,12.5],[17.5,12.5],[16.5,13.5],[15.5,12.5]];  // co-op start inside bunker
+  return {name:'THE YARD',type:'zombies',map:_toStr(g),spawns:co,redSpawns:co,blueSpawns:co,bases:{},flags:{},
+    zspawns:z,
+    lights:[{x:16.5,y:12.5,r:7,i:0.7,col:[1,.85,.6]},{x:8,y:8,r:6,i:0.4,flicker:true,col:[1,.4,.3]},
+      {x:26,y:18,r:6,i:0.4,flicker:true,col:[1,.4,.3]},{x:26,y:8,r:6,i:0.4,col:[.6,1,.5]},{x:8,y:18,r:6,i:0.4,col:[.6,1,.5]}],
+    fog:[7,8,9],darkness:0.18};
+}
+function buildHydro(){
+  const W=34,H=26,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(3,3,30,22);                          // open hall
+  // symmetric pool blocks (impassable, cover) — mirrored L/R
+  _rect(g,7,6,10,9,'#');  _rect(g,23,6,26,9,'#');
+  _rect(g,7,16,10,19,'#'); _rect(g,23,16,26,19,'#');
+  _rect(g,15,11,18,14,'#');              // central island (breaks base-to-base LOS)
+  // base rooms L/R
+  c(3,10,5,15); c(28,10,30,15);
+  const sR=[[4,11.5],[4,13.5],[6,10.5],[6,14.5]];
+  const sB=[[29,11.5],[29,13.5],[27,10.5],[27,14.5]];
+  return {name:'HYDRO',type:'pvp',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
+    bases:{red:[4,12.5],blue:[29,12.5]},flags:{red:[4,12.5],blue:[29,12.5]},
+    lights:[{x:16.5,y:12.5,r:13,i:0.95,col:[.65,.95,1]},{x:4,y:12.5,r:6,i:0.8,col:[1,.5,.4]},
+      {x:29,y:12.5,r:6,i:0.8,col:[.5,.6,1]},{x:8,y:7,r:5,i:0.4,flicker:true,col:[.5,.8,1]},
+      {x:25,y:18,r:5,i:0.4,flicker:true,col:[.5,.8,1]}],
+    fog:[7,10,12],darkness:0.14};
+}
+function buildIntake(){
+  const W=38,H=24,g=_blank(W,H); _rect(g,1,1,W-2,H-2,'#');
+  const c=(x0,y0,x1,y1)=>_rect(g,x0,y0,x1,y1,'.');
+  c(13,4,24,19);                          // central waiting hall
+  c(3,9,13,14); c(24,9,35,14);            // hall->base corridors
+  c(3,7,7,16); c(30,7,34,16);             // base rooms (intake desks) L/R
+  // side office flanks top & bottom
+  c(9,3,28,4); c(9,19,28,20);
+  c(10,4,10,9); c(27,4,27,9); c(10,14,10,19); c(27,14,27,19);
+  // bench cover in the hall + central desk LOS-breaker
+  _rect(g,16,7,17,7,'#'); _rect(g,20,16,21,16,'#'); _rect(g,18,11,19,12,'#');
+  const sR=[[5,10.5],[5,13.5],[4,8.5],[6,15.5]];
+  const sB=[[32,10.5],[32,13.5],[33,8.5],[31,15.5]];
+  return {name:'INTAKE',type:'pvp',map:_toStr(g),redSpawns:sR,blueSpawns:sB,spawns:sR.concat(sB),
+    bases:{red:[5,11.5],blue:[32,11.5]},flags:{red:[5,11.5],blue:[32,11.5]},
+    lights:[{x:18.5,y:11.5,r:13,i:0.95,col:[1,.92,.78]},{x:5,y:11.5,r:6,i:0.8,col:[1,.5,.4]},
+      {x:32,y:11.5,r:6,i:0.8,col:[.5,.6,1]},{x:18,y:3.5,r:7,i:0.45,flicker:true},{x:18,y:19.5,r:7,i:0.45,flicker:true}],
+    fog:[9,10,11],darkness:0.15};
+}
+const ARENAS=[buildTwinWards(),buildThePit(),buildMorgue(),buildCellBlock(),buildChapel(),buildYard(),buildHydro(),buildIntake()];
+ARENAS[0].type='pvp'; ARENAS[1].type='zombies';   // the new six carry their own type
+const ARENA_MAT={
+  'TWIN WARDS':{1:'padded',5:'tile'}, 'MORGUE':{1:'steel',5:'ceramic'},
+  'CELL BLOCK D':{1:'peeling',5:'bars'}, 'CHAPEL':{1:'brick',5:'tile'},
+  'HYDRO':{1:'pooltile',5:'tile'}, 'INTAKE':{1:'plaster',5:'ceramic'},
+  'THE PIT':{1:'wetconc',5:'hazard'}, 'THE YARD':{1:'peeling',5:'wetconc'} };
+function _afloor(a,x,y){const r=a.map;x=x|0;y=y|0;for(let rad=0;rad<8;rad++)for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++){const nx=x+dx,ny=y+dy;if(ny>0&&nx>0&&ny<r.length-1&&nx<r[0].length-1&&r[ny][nx]==='.')return[nx+0.5,ny+0.5];}return null;}
+function _props(a,list){const o=[];for(const it of list){const f=_afloor(a,it[0],it[1]);if(f)o.push({x:f[0],y:f[1],kind:it[2],face:it[3]||0});}return o;}
+function arenaProps(a){const C=_centerFloor(a);switch(a.name){
+  case 'TWIN WARDS': return _props(a,[[6,11,'bedframe'],[6,15,'wheelchair'],[33,11,'bedframe'],[33,15,'wheelchair'],[8,12,'ivstand'],[31,12,'ivstand']]);
+  case 'MORGUE': return _props(a,[[C[0],C[1],'gurney'],[17,9,'gurney'],[20,16,'gurney'],[4,11,'cabinet'],[31,14,'cabinet'],[6,15,'sink']]);
+  case 'CELL BLOCK D': return _props(a,[[6,5,'bedframe'],[9,14,'bucket'],[16,5,'bedframe'],[29,14,'bucket'],[36,5,'bedframe'],[5,10,'straitjacket']]);
+  case 'CHAPEL': return _props(a,[[14,10,'chair'],[17,10,'chair'],[14,14,'chair'],[17,14,'chair'],[14,18,'chair'],[17,18,'chair'],[15,6,'counter'],[15,21,'counter']]);
+  case 'HYDRO': return _props(a,[[8,7,'sink'],[25,7,'sink'],[8,18,'gurney'],[25,18,'gurney'],[16,12,'bucket']]);
+  case 'INTAKE': return _props(a,[[18,11,'counter'],[16,8,'files'],[20,16,'files'],[5,11,'cabinet'],[32,11,'chair'],[18,4,'chair']]);
+  case 'THE PIT': return _props(a,[[13,9,'bucket'],[18,14,'cabinet'],[12,11,'bucket'],[19,12,'cabinet']]);
+  case 'THE YARD': return _props(a,[[7,7,'cabinet'],[26,18,'bedframe'],[16,5,'bucket'],[16,20,'bucket']]);
+}return [];}
+function arenaToLevel(a){
+  const mat=ARENA_MAT[a.name]||{1:'plaster'};
+  const tex=()=>{const o={};for(const k in mat)o[+k]=makeTex(mat[k]);return o;};
+  return { name:a.name, map:a.map, tex,
+    lights:a.lights||[], fog:a.fog||[9,10,11], darkness:a.darkness||0.12,
+    props:arenaProps(a), pickups:()=>a._pickups||[], enemies:()=>[], objective:a.name };
+}
+// arena-agnostic pickups — placed only on spawn/base/scan-floor cells (never in a wall),
+// mirrored red/blue so neither side is favoured.
+function _centerFloor(a){ const rows=a.map,H=rows.length,Wd=rows[0].length,cx=Wd>>1,cy=H>>1;
+  for(let rad=0;rad<Math.max(Wd,H);rad++){ for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++){
+    const x=cx+dx,y=cy+dy; if(x>0&&y>0&&x<Wd-1&&y<H-1&&rows[y][x]==='.') return [x+0.5,y+0.5]; } }
+  return a.spawns[0]; }
 function arenaPickups(a){
-  if(a.name==='TWIN WARDS') return [
-    {x:20,y:12,kind:'weapon',sub:'shotgun'},          // contested centre
-    {x:20,y:8,kind:'ammo',sub:'shells',amt:16},{x:20,y:17,kind:'ammo',sub:'shells',amt:16},
-    {x:6,y:6,kind:'weapon',sub:'uzi'},{x:33,y:6,kind:'weapon',sub:'uzi'},
-    {x:6,y:20,kind:'weapon',sub:'rifle'},{x:33,y:20,kind:'weapon',sub:'rifle'},
-    {x:8,y:12,kind:'ammo',sub:'pistol',amt:24},{x:31,y:12,kind:'ammo',sub:'pistol',amt:24},
-    {x:5,y:12,kind:'health',amt:30},{x:34,y:12,kind:'health',amt:30},
-    {x:20,y:3,kind:'health',amt:25},{x:20,y:22,kind:'health',amt:25},
-    {x:6,y:4,kind:'ammo',sub:'smg',amt:60},{x:33,y:4,kind:'ammo',sub:'smg',amt:60},
-    {x:6,y:21,kind:'ammo',sub:'rifle',amt:16},{x:33,y:21,kind:'ammo',sub:'rifle',amt:16},
-  ];
-  return [ // THE PIT — supply the holdout
-    {x:15,y:11,kind:'weapon',sub:'shotgun'},{x:16,y:12,kind:'weapon',sub:'uzi'},
-    {x:12,y:9,kind:'ammo',sub:'shells',amt:20},{x:19,y:14,kind:'ammo',sub:'smg',amt:80},
-    {x:12,y:14,kind:'ammo',sub:'pistol',amt:30},{x:19,y:9,kind:'health',amt:40},
-    {x:15,y:14,kind:'weapon',sub:'rifle'},{x:16,y:9,kind:'ammo',sub:'rifle',amt:24},
-  ];
+  const P=[], put=(pt,kind,sub,amt)=>{ if(pt) P.push({x:pt[0],y:pt[1],kind,sub,amt}); };
+  if(a.type==='zombies'){
+    const s=a.spawns;
+    put(s[0],'weapon','shotgun'); put(s[1],'weapon','uzi'); put(s[2],'ammo','shells',20); put(s[3]||s[0],'ammo','smg',80);
+    if(a.zspawns){ put([a.zspawns[0][0],a.zspawns[0][1]],'health',null,30); }
+    put(_centerFloor(a),'weapon','rifle');
+    return P;
+  }
+  const r=a.redSpawns, b=a.blueSpawns;
+  put(a.bases.red,'health',null,30);  put(a.bases.blue,'health',null,30);
+  put(r[0],'ammo','shells',16);       put(b[0],'ammo','shells',16);
+  put(r[1],'weapon','uzi');           put(b[1],'weapon','uzi');
+  put(r[2],'ammo','smg',60);          put(b[2],'ammo','smg',60);
+  put(r[3],'weapon','rifle');         put(b[3],'weapon','rifle');
+  put(_centerFloor(a),'weapon','shotgun');   // contested centre
+  return P;
 }
 
 const MP = {
@@ -3495,20 +3668,27 @@ const MP = {
   },
 
   // enter a match: load arena, then join/create a room for {mode,arena}
-  start(mode, arenaIdx, name){
-    this.mode=mode; this.pvp=(mode!=='zombies'); this.arenaIdx=arenaIdx;
-    this.arena=ARENAS[arenaIdx]; this.name=(name||'FALCON').slice(0,12).toUpperCase();
-    this.team = this.pvp&&mode!=='dm' ? 'red' : (mode==='zombies'?'coop':'ffa'); // real team set on join
+  // ── matchmaking config ──
+  minPlayers:1, countdownMs:5000, lobbyForceMs:30000,
+  room:{state:'lobby',arena:0,pool:[0,0],startAt:0,why:''}, myReady:false, myVote:null,
+  _appliedState:null, _inGame:false, _iv:0, lobbyStart:0,
+
+  start(mode, name){
+    this.mode=mode; this.pvp=(mode!=='zombies');
+    this.name=(name||'FALCON').slice(0,12).toUpperCase();
+    this.team = this.pvp&&mode!=='dm' ? 'red' : (mode==='zombies'?'coop':'ffa');
     this.k=0; this.d=0; this.fl=false; this.players={}; this.killfeed=[];
     this.scores={red:0,blue:0}; this.z={wave:0,alive:0,enemies:[],mirror:[],nextWave:0};
-    this.loadArena(arenaIdx);
-    if(!this.init()){ // offline: still drop into the arena solo so the map is usable/testable
-      this.active=true; this.ready=true; this.host=true; this.spawnMe();
-      this.status('OFFLINE — no server. Solo walkthrough of the arena.');
-      this.enterGame(); return;
+    this.myReady=false; this.myVote=null; this._appliedState=null; this._inGame=false; this._ended=false;
+    const pool=this._poolFor(mode); this.arenaIdx=pool[0]; this.arena=ARENAS[pool[0]];
+    this.loadArena(pool[0]);
+    if(!this.init()){ // offline: fully playable solo lobby loop
+      this.active=true; this.host=true; this.roomRef=null; this.uid=this.genId();
+      this.room={state:'lobby',arena:pool[0],pool,startAt:0,why:''}; this.lobbyStart=Date.now();
+      this.status('OFFLINE — solo lobby. Ready up to start.'); this._startLobbyLoop(); return;
     }
     this.uid=this.genId();
-    this.joinRoom(mode, arenaIdx);
+    this.joinRoom(mode, pool);
   },
 
   loadArena(idx){
@@ -3541,71 +3721,58 @@ const MP = {
   },
 
   enterGame(){
-    for(const c of ['mainmenu','tap','mplobby','settings','mpsetup']){const el=document.getElementById(c);if(el)el.style.display='none';}
+    for(const c of ['mainmenu','tap','mplobby','settings','mpsetup','mplobbyscreen','mppost']){const el=document.getElementById(c);if(el)el.style.display='none';}
     document.getElementById('mphud').style.display='block';
     running=true; last=performance.now(); dead=false; won=false;
     initAudio(); if(AC&&AC.state==='suspended')AC.resume(); startGameMusic();
     if(this.mode==='zombies') this.z.nextWave=T+2;
   },
 
-  joinRoom(mode, arenaIdx){
-    this.status('Connecting to server…');
-    // if nothing comes back, don't sit forever on map select
-    this._joinT=setTimeout(()=>{ if(!this.active) this._joinFail('No response from the database. Make sure Realtime Database is created and the rules are published (see below). Dropped you in solo so you can still look around.'); }, 9000);
+  joinRoom(mode, pool){
+    this.status('Searching for a match…');
+    this._joinT=setTimeout(()=>{ if(!this.active) this._joinFail('No response from the database. Make sure Realtime Database exists and the rules are published. Dropped you into a solo lobby.'); }, 9000);
     let roomsRef; try{ roomsRef=this.db.ref('rooms'); }catch(e){ return this._joinFail('DB error: '+e.message); }
-    const tag=mode+'_'+arenaIdx;
-    // find an open room with the same mode+arena, else create one
-    roomsRef.orderByChild('tag').equalTo(tag).limitToLast(8).once('value').then(snap=>{
-      let target=null; snap.forEach(ch=>{ const r=ch.val()||{};
-        const n=r.players?Object.keys(r.players).length:0;
-        if(n<8 && r.state!=='closed'){ target=ch.key; } });
+    // COD-style: pool by MODE (map is chosen by vote in the lobby), backfill open rooms
+    roomsRef.orderByChild('tag').equalTo(mode).limitToLast(10).once('value').then(snap=>{
+      let target=null; snap.forEach(ch=>{ const r=ch.val()||{}; const np=r.players?Object.keys(r.players).length:0;
+        const lst=r.lobby?r.lobby.state:'lobby'; if(np<8 && lst!=='ended') target=ch.key; });
       if(!target){ target=roomsRef.push().key;
-        this.db.ref('rooms/'+target).update({tag,mode,arena:arenaIdx,host:this.uid,created:firebase.database.ServerValue.TIMESTAMP,state:'open'}); }
+        this.db.ref('rooms/'+target).update({tag:mode,mode,host:this.uid,created:firebase.database.ServerValue.TIMESTAMP});
+        this.db.ref('rooms/'+target+'/lobby').set({state:'lobby',arena:pool[0],pool,startAt:0,why:''}); }
       this.roomId=target; this.roomRef=this.db.ref('rooms/'+target);
       return this.roomRef.child('host').once('value').then(h=>{ this.host=(h.val()===this.uid); this.afterJoin(); });
-    }).catch(e=>{ this._joinFail('Join failed ('+(e.code||e.message||'unknown')+'). Most likely the RTDB rules block /rooms — publish the rules I gave you. Dropped you in solo for now.'); });
+    }).catch(e=>{ this._joinFail('Search failed ('+(e.code||e.message||'unknown')+'). Check RTDB rules allow /rooms. Solo lobby for now.'); });
   },
   _joinFail(msg){
-    if(this.active) return;                 // a real join already succeeded
-    clearTimeout(this._joinT);
-    this.status(msg);
-    this.roomRef=null; this.host=true; this.active=true; this.ready=true;   // offline solo so map is still usable
-    this.uid=this.uid||this.genId(); this.spawnMe(); this.enterGame();
+    if(this.active) return;
+    clearTimeout(this._joinT); this.status(msg);
+    this.roomRef=null; this.host=true; this.active=true; this.uid=this.uid||this.genId();
+    const pool=this._poolFor(this.mode); this.room={state:'lobby',arena:pool[0],pool,startAt:0,why:''};
+    this.lobbyStart=Date.now(); this._startLobbyLoop();
   },
 
   afterJoin(){
-    if(this.active) return;               // timeout fallback already fired
+    if(this.active) return;
     clearTimeout(this._joinT);
     const meRef=this.roomRef.child('players/'+this.uid);
-    // team balance for TDM/CTF
     this.roomRef.child('players').once('value').then(snap=>{
-      if(this.mode==='tdm'||this.mode==='ctf'){ let r=0,b=0; snap.forEach(c=>{const t=c.val().team; if(t==='red')r++; else if(t==='blue')b++;}); this.team=(r<=b)?'red':'blue'; }
+      if(this.mode==='tdm'||this.mode==='ctf'){ let r=0,b=0; snap.forEach(c=>{const t=(c.val()||{}).team; if(t==='red')r++; else if(t==='blue')b++;}); this.team=(r<=b)?'red':'blue'; }
       else if(this.mode==='dm') this.team='ffa'; else this.team='coop';
-      this.spawnMe();
-      const rec={name:this.name,team:this.team,x:P.x,y:P.y,a:P.a,hp:100,w:curWeapon,k:0,d:0,fl:false,fr:0,t:firebase.database.ServerValue.TIMESTAMP};
-      meRef.set(rec);
-      meRef.onDisconnect().remove();
-      this.roomRef.child('inbox/'+this.uid).onDisconnect().remove();
-      // remote players
+      const pool0=(this.room&&this.room.pool)?this.room.pool:this._poolFor(this.mode);
+      const rec={name:this.name,team:this.team,x:0,y:0,a:0,hp:100,w:curWeapon,k:0,d:0,fl:false,fr:0,ready:false,vote:pool0[0],t:firebase.database.ServerValue.TIMESTAMP};
+      meRef.set(rec); meRef.onDisconnect().remove(); this.roomRef.child('inbox/'+this.uid).onDisconnect().remove();
       const pref=this.roomRef.child('players');
       pref.on('child_added',s=>{ if(s.key!==this.uid) this._addPlayer(s.key,s.val()); });
       pref.on('child_changed',s=>{ if(s.key!==this.uid) this._updPlayer(s.key,s.val()); });
       pref.on('child_removed',s=>{ delete this.players[s.key]; });
-      // my damage inbox
       this.roomRef.child('inbox/'+this.uid).on('child_added',s=>{ const d=s.val(); this.applyDamage(d); s.ref.remove(); });
-      // scores (TDM/CTF)
       this.roomRef.child('scores').on('value',s=>{ this.scores=s.val()||{red:0,blue:0}; });
-      // flags (CTF)
-      if(this.mode==='ctf'){ this.roomRef.child('flags').on('value',s=>{ const f=s.val(); if(f){ if(f.red)this.flags.red=f.red; if(f.blue)this.flags.blue=f.blue; } });
-        // seed flags if host and unset
-        if(this.host) this.roomRef.child('flags').once('value').then(s=>{ if(!s.val()) this.roomRef.child('flags').set(this.flags); }); }
-      // zombies mirror (non-host reads host's swarm)
+      if(this.mode==='ctf'){ this.roomRef.child('flags').on('value',s=>{ const f=s.val(); if(f){ if(f.red)this.flags.red=f.red; if(f.blue)this.flags.blue=f.blue; } }); }
       if(this.mode==='zombies'){ this.roomRef.child('z').on('value',s=>{ const v=s.val(); if(v){ this.z.wave=v.wave||0; if(!this.host&&v.enemies) this.z.mirror=v.enemies; } });
-        if(!this.host){ this.roomRef.child('zdmg').on('child_added',()=>{}); } // host-only consumer below
         if(this.host){ this.roomRef.child('zdmg').on('child_added',s=>{ const d=s.val(); const e=enemies[d.i]; if(e&&e.hp>0){ e.hp-=d.dmg; e.hitFlash=0.1; if(e.hp<=0){ e.state='dead'; } } s.ref.remove(); }); } }
-      this.active=true; this.ready=true;
-      this.status('In match: '+this.arena.name);
-      this.enterGame();
+      this.roomRef.child('lobby').on('value',s=>this._onMeta(s.val()));   // lobby/match state sync
+      this.active=true; this.lobbyStart=Date.now();
+      this.status('In lobby'); this._startLobbyLoop();
     });
   },
 
@@ -3745,20 +3912,14 @@ const MP = {
   },
 
   _checkWin(){
-    let over=null, why='';
-    if(this.mode==='dm'){ let top=this.k, name=this.name;
-      for(const id in this.players){ if((this.players[id].k||0)>top){top=this.players[id].k;name=this.players[id].name;} }
-      if(top>=this.fragLimit){ over=(name===this.name); why=name+' HIT THE FRAG LIMIT'; } }
-    else if(this.mode==='tdm'){ if(this.scores.red>=this.teamLimit){over=(this.team==='red');why='RED WINS';}
-      else if(this.scores.blue>=this.teamLimit){over=(this.team==='blue');why='BLUE WINS';} }
-    else if(this.mode==='ctf'){ if(this.scores.red>=this.capLimit){over=(this.team==='red');why='RED CAPTURED '+this.capLimit;}
-      else if(this.scores.blue>=this.capLimit){over=(this.team==='blue');why='BLUE CAPTURED '+this.capLimit;} }
-    if(over!==null && !this._ended){ this._ended=true; running=false;
-      const t=document.getElementById('endtitle'),l1=document.getElementById('endline1'),l2=document.getElementById('endline2'),btn=document.getElementById('descend');
-      t.textContent = over?'VICTORY':'DEFEAT'; l1.textContent=why; l2.textContent='';
-      btn.textContent='LEAVE MATCH'; document.getElementById('endcard').style.display='flex';
-      btn.onclick=()=>location.reload();
-    }
+    if(this._ended||!this._inGame) return;
+    let ended=false, why='';
+    if(this.mode==='dm'){ let top=this.k,name=this.name; for(const id in this.players){ if((this.players[id].k||0)>top){top=this.players[id].k;name=this.players[id].name;} }
+      if(top>=this.fragLimit){ ended=true; why=name+' WINS'; } }
+    else if(this.mode==='tdm'){ if(this.scores.red>=this.teamLimit){ended=true;why='RED WINS';} else if(this.scores.blue>=this.teamLimit){ended=true;why='BLUE WINS';} }
+    else if(this.mode==='ctf'){ if(this.scores.red>=this.capLimit){ended=true;why='RED CAPTURED '+this.capLimit;} else if(this.scores.blue>=this.capLimit){ended=true;why='BLUE CAPTURED '+this.capLimit;} }
+    if(ended){ this._ended=true; running=false;
+      if(this.roomRef) this.roomRef.child('lobby').update({state:'ended',why}); else this._setState({state:'ended',why}); }
   },
 
   // ── rendering: remote players (PvP) + streamed zombies (co-op) ──
@@ -3854,10 +4015,108 @@ const MP = {
     el.style.display='block';
   },
 
-  leave(){
-    try{ if(this.roomRef&&this.uid){ this.roomRef.child('players/'+this.uid).remove(); this.roomRef.child('inbox/'+this.uid).remove(); this.roomRef.off(); } }catch(e){}
-    this.active=false; this.ready=false; this._ended=false;
+  // ═════════ COD-STYLE LOBBY / MATCHMAKING LOOP ═════════
+  _poolFor(mode){ const want=(mode==='zombies')?'zombies':'pvp';
+    const idx=ARENAS.map((a,i)=>i).filter(i=>(ARENAS[i].type||'pvp')===want);
+    if(idx.length<2) return [idx[0]||0,idx[0]||0];
+    const a=idx[(Math.random()*idx.length)|0]; let b=a,g=0; while(b===a&&g++<20) b=idx[(Math.random()*idx.length)|0];
+    return [a,b]; },
+  _startLobbyLoop(){ if(this._iv)clearInterval(this._iv); this._iv=setInterval(()=>this._tick(),200); this._tick(); },
+  _onMeta(m){ if(!m)return; this.room={state:m.state||'lobby',arena:(m.arena!=null?m.arena:this.room.arena),pool:m.pool||this.room.pool,startAt:m.startAt||0,why:m.why||''}; this._tick(); },
+  _setState(obj){ if(this.roomRef){ this.roomRef.child('lobby').update(obj); } else { Object.assign(this.room,obj); this._tick(); } },
+  _tick(){ if(!this.active)return; const st=this.room.state;
+    if(st!==this._appliedState){ this._enterState(st); this._appliedState=st; }
+    if(st==='lobby'||st==='countdown'){ this._renderLobby(); if(this.host) this._hostLobby(); } },
+  _enterState(st){
+    if(st==='playing'){ this._beginMatch(); }
+    else if(st==='lobby'||st==='countdown'){ if(st==='lobby') this.lobbyStart=Date.now(); this._showLobby(); }
+    else if(st==='ended'){ this._showPost(); } },
+  _hostLobby(){
+    if(this.room.state==='lobby'){
+      const rem=Object.values(this.players), n=1+rem.length;
+      const allReady=this.myReady && rem.every(p=>p.ready);
+      const readyCount=(this.myReady?1:0)+rem.filter(p=>p.ready).length;
+      const elapsed=Date.now()-(this.lobbyStart||Date.now());
+      if((allReady && n>=this.minPlayers) || (elapsed>this.lobbyForceMs && readyCount>=1))
+        this._setState({state:'countdown',startAt:Date.now()+this.countdownMs});
+    } else if(this.room.state==='countdown'){
+      if(Date.now()>=(this.room.startAt||0)){
+        const arena=this._resolveVote(); if(this.roomRef) this.roomRef.child('scores').set({red:0,blue:0}); this.scores={red:0,blue:0};
+        this._setState({state:'playing',arena}); } } },
+  _resolveVote(){ const pool=this.room.pool||[this.arenaIdx,this.arenaIdx]; const t={}; pool.forEach(i=>t[i]=0);
+    const add=v=>{ if(t[v]!=null)t[v]++; }; add(this.myVote!=null?this.myVote:pool[0]);
+    Object.values(this.players).forEach(p=>add(p.vote!=null?p.vote:pool[0]));
+    let best=pool[0],bn=-1; pool.forEach(i=>{ if(t[i]>bn||(t[i]===bn&&Math.random()<0.5)){bn=t[i];best=i;} }); return best; },
+  setReady(v){ this.myReady=v; if(this.roomRef)this.roomRef.child('players/'+this.uid).update({ready:v}); this._renderLobby(); },
+  castVote(i){ this.myVote=i; if(this.roomRef)this.roomRef.child('players/'+this.uid).update({vote:i}); this._renderLobby(); },
+  _showLobby(){ running=false; this._inGame=false; this._ended=false;
     document.getElementById('mphud').style.display='none';
+    for(const c of ['mainmenu','tap','mplobby','settings','mpsetup','mppost']){const el=document.getElementById(c);if(el)el.style.display='none';}
+    const el=document.getElementById('mplobbyscreen'); if(el)el.style.display='flex'; this._renderLobby(); },
+  _beginMatch(){ this.arenaIdx=this.room.arena; this.arena=ARENAS[this.arenaIdx];
+    this._ended=false; this._inGame=true; this.k=0; this.d=0; this.killfeed=[]; this.myReady=false;
+    this.loadArena(this.arenaIdx); this.spawnMe();
+    if(this.mode==='ctf'&&this.host&&this.roomRef) this.roomRef.child('flags').set(this.flags);
+    if(this.roomRef) this.roomRef.child('players/'+this.uid).update({x:+P.x.toFixed(2),y:+P.y.toFixed(2),a:+P.a.toFixed(2),hp:100,k:0,d:0,ready:false});
+    this.enterGame(); },
+  _showPost(){ running=false; this._inGame=false;
+    document.getElementById('mphud').style.display='none';
+    const lob=document.getElementById('mplobbyscreen'); if(lob)lob.style.display='none';
+    document.getElementById('post_title').textContent='MATCH OVER';
+    document.getElementById('post_sub').textContent=this.room.why||'';
+    const rows=[{name:this.name,team:this.team,k:this.k,d:this.d,me:1}];
+    for(const id in this.players){const p=this.players[id];rows.push({name:p.name,team:p.team,k:p.k||0,d:p.d||0});}
+    rows.sort((a,b)=>b.k-a.k);
+    document.getElementById('post_board').innerHTML='<div style="color:#c33;letter-spacing:2px;margin-bottom:6px;text-align:left">'+this.mode.toUpperCase()+' — '+(ARENAS[this.arenaIdx]?ARENAS[this.arenaIdx].name:'')+'</div>'+
+      rows.map((r,i)=>'<div style="display:flex;justify-content:space-between;color:'+(r.team==='blue'?'#7ab0ff':r.team==='red'?'#ff7a7a':'#ddd')+'"><span>'+(i===0?'★ ':'')+r.name+(r.me?' (you)':'')+'</span><span>'+r.k+' / '+r.d+'</span></div>').join('');
+    document.getElementById('post_again').onclick=()=>this.playAgain();
+    document.getElementById('post_leave').onclick=()=>{ this.leave(); _show('mainmenu'); };
+    const el=document.getElementById('mppost'); if(el)el.style.display='flex'; },
+  playAgain(){ this.myReady=false; this.myVote=null; this.lobbyStart=Date.now();
+    const pool=this._poolFor(this.mode); this.scores={red:0,blue:0};
+    if(this.roomRef){ this.roomRef.child('lobby').update({state:'lobby',pool,arena:pool[0],startAt:0,why:''});
+      this.roomRef.child('players/'+this.uid).update({ready:false,vote:pool[0]}); this.roomRef.child('scores').set({red:0,blue:0}); }
+    else { this._setState({state:'lobby',pool,arena:pool[0],startAt:0,why:''}); } },
+  _renderLobby(){ const st=this.room.state;
+    const modeName={dm:'DEATHMATCH',tdm:'TEAM DEATHMATCH',ctf:'CAPTURE THE FLAG',zombies:'ZOMBIES CO-OP'}[this.mode]||(''+this.mode).toUpperCase();
+    const mn=document.getElementById('lob_mode'); if(mn)mn.textContent=modeName;
+    const rem=Object.values(this.players), n=1+rem.length;
+    const stat=document.getElementById('lob_status');
+    if(stat) stat.textContent = this.roomRef ? ('LOBBY · '+n+' in room'+(n<2?' · searching…':'')) : 'LOBBY · solo (offline)';
+    const mkRow=(nm,rd,me)=>'<div style="display:flex;justify-content:space-between;gap:16px;color:'+(me?'#fd6':'#ddd')+'"><span>'+nm+'</span><span style="color:'+(rd?'#4d7':'#555')+'">'+(rd?'\u2713':'\u00b7')+'</span></div>';
+    const rost=document.getElementById('lob_rosters');
+    if(rost){
+      if(this.mode==='tdm'||this.mode==='ctf'){
+        const all=[{name:this.name,ready:this.myReady,me:1,team:this.team}].concat(rem.map(p=>({name:p.name,ready:p.ready,team:p.team})));
+        const R=all.filter(p=>p.team==='red'), B=all.filter(p=>p.team==='blue');
+        rost.innerHTML='<div style="flex:1"><div style="color:#ff7a7a;letter-spacing:2px;margin-bottom:4px">RED</div>'+R.map(p=>mkRow(p.name+(p.me?' (you)':''),p.ready,p.me)).join('')+'</div>'+
+                       '<div style="flex:1"><div style="color:#7ab0ff;letter-spacing:2px;margin-bottom:4px">BLUE</div>'+B.map(p=>mkRow(p.name+(p.me?' (you)':''),p.ready,p.me)).join('')+'</div>';
+      } else {
+        const all=[mkRow(this.name+' (you)',this.myReady,1)].concat(rem.map(p=>mkRow(p.name,p.ready,0)));
+        rost.innerHTML='<div style="flex:1;min-width:240px">'+all.join('')+'</div>';
+      }
+    }
+    const pool=this.room.pool||[this.arenaIdx,this.arenaIdx];
+    const votes={}; pool.forEach(i=>votes[i]=0); const addv=v=>{if(votes[v]!=null)votes[v]++;};
+    addv(this.myVote!=null?this.myVote:pool[0]); rem.forEach(p=>addv(p.vote!=null?p.vote:pool[0]));
+    const maps=document.getElementById('lob_maps');
+    if(maps){ maps.innerHTML=pool.map((i,k)=>{ const sel=(this.myVote===i)||(this.myVote==null&&k===0);
+        return '<button class="mpmode" data-vote="'+i+'" style="opacity:'+(sel?1:0.55)+'">'+ARENAS[i].name+' <span style="color:#fd6">('+votes[i]+')</span></button>'; }).join('');
+      [...maps.children].forEach(b=>b.onclick=()=>this.castVote(+b.dataset.vote)); }
+    const foot=document.getElementById('lob_foot');
+    if(foot){
+      if(st==='countdown'){ const sc=Math.max(0,Math.ceil(((this.room.startAt||0)-Date.now())/1000));
+        foot.innerHTML='<div style="font-size:24px;color:#c33;letter-spacing:3px">DEPLOYING IN '+sc+'</div>'; }
+      else { foot.innerHTML='<button id="lob_ready" style="font-size:16px;padding:9px 22px'+(this.myReady?';background:#16331a;border-color:#2a5':'')+'">'+(this.myReady?'\u2713 READY  (tap to cancel)':'READY UP')+'</button> <button id="lob_leave">LEAVE</button>';
+        const rb=document.getElementById('lob_ready'); if(rb)rb.onclick=()=>this.setReady(!this.myReady);
+        const lb=document.getElementById('lob_leave'); if(lb)lb.onclick=()=>{ this.leave(); _show('mainmenu'); }; }
+    } },
+
+  leave(){
+    if(this._iv){ clearInterval(this._iv); this._iv=0; }
+    try{ if(this.roomRef&&this.uid){ this.roomRef.child('players/'+this.uid).remove(); this.roomRef.child('inbox/'+this.uid).remove(); this.roomRef.off(); } }catch(e){}
+    this.active=false; this.ready=false; this._ended=false; this._inGame=false; this._appliedState=null;
+    for(const c of ['mphud','mplobbyscreen','mppost']){const el=document.getElementById(c);if(el)el.style.display='none';}
   }
 };
 
@@ -3910,18 +4169,13 @@ _sn('sQual').oninput=e=>{ SETTINGS.quality=(+e.target.value)/100; _sn('vQual').t
 let _mpMode='dm', _mpArena=0;
 function _openSetup(mode){ _mpMode=mode;
   document.getElementById('mpsetup_mode').textContent={dm:'DEATHMATCH',tdm:'TEAM DEATHMATCH',ctf:'CAPTURE THE FLAG',zombies:'ZOMBIES (CO-OP)'}[mode]||mode.toUpperCase();
-  const wrap=document.getElementById('mparenas'); wrap.innerHTML='';
-  const list = mode==='zombies' ? [1] : [0];   // zombies->THE PIT; PvP->TWIN WARDS (more arenas coming)
-  _mpArena=list[0];
-  list.forEach(i=>{ const btn=document.createElement('button'); btn.className='mpmode'; btn.textContent=ARENAS[i].name; btn.style.opacity=(i===_mpArena)?'1':'0.6';
-    btn.onclick=()=>{ _mpArena=i; [...wrap.children].forEach(c=>c.style.opacity='0.6'); btn.style.opacity='1'; };
-    wrap.appendChild(btn); });
-  document.getElementById('mpstatus2').textContent=(typeof firebase==='undefined'||!FIREBASE_CONFIG.databaseURL)?'No server configured — JOIN drops you into a solo walkthrough of the arena.':'';
+  const wrap=document.getElementById('mparenas'); wrap.innerHTML='<div style="color:#888;font-size:12px;line-height:1.5">Maps are chosen by <b style="color:#c33">vote in the lobby</b> — COD-style. Find a match, ready up, vote your map.</div>';
+  document.getElementById('mpstatus2').textContent=(typeof firebase==='undefined'||!FIREBASE_CONFIG.databaseURL)?'No server configured — you\'ll get a solo lobby you can still play.':'';
   _show('mpsetup');
 }
 document.querySelectorAll('.mpmode').forEach(b=>{ if(b.dataset.mode) b.onclick=()=>_openSetup(b.dataset.mode); });
 document.getElementById('mpsetupback').onclick=()=>_show('mplobby');
-document.getElementById('mpjoin').onclick=()=>{ const nm=(document.getElementById('mpname').value||'FALCON'); MP.start(_mpMode,_mpArena,nm); };
+document.getElementById('mpjoin').onclick=()=>{ const nm=(document.getElementById('mpname').value||'FALCON'); MP.start(_mpMode,nm); };
 
 // ---- end-of-floor card: seeds the first quiet hint of the truth ----
 function showEndCard(hasNext){
