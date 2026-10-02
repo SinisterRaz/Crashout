@@ -76,6 +76,8 @@
     <h2 style="color:#c33" id="mpsetup_mode">MODE</h2>
     <div style="color:#888;letter-spacing:3px;font-size:11px;margin:6px 0">CALLSIGN</div>
     <input id="mpname" maxlength="12" value="FALCON" style="font-family:inherit;text-align:center;background:#111;color:#fd6;border:1px solid #444;padding:6px;letter-spacing:2px;width:60%"><br><br>
+    <div style="color:#888;letter-spacing:3px;font-size:11px;margin:6px 0">CHARACTER</div>
+    <div id="mpskins" style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-bottom:8px"></div>
     <div style="color:#888;letter-spacing:3px;font-size:11px;margin:6px 0">ARENA</div>
     <div id="mparenas"></div>
     <div id="mpstatus2" style="color:#777;font-size:11px;margin-top:10px"></div>
@@ -698,6 +700,14 @@ function updateProjectiles(dt){
     if(Math.hypot(p.x-P.x,p.y-P.y)<0.5){ hurtPlayer(p.dmg); projectiles.splice(i,1); }
   }
 }
+function drawHitmarker(){
+  if(hitMark<=0&&hitKill<=0)return;
+  const cx=W/2, cy=H/2;
+  const mk=(col,lw,r,R,al)=>{ ctx.save(); ctx.globalAlpha=al; ctx.strokeStyle=col; ctx.lineWidth=lw;
+    for(const s of [[-1,-1],[1,-1],[-1,1],[1,1]]){ ctx.beginPath(); ctx.moveTo(cx+s[0]*r,cy+s[1]*r); ctx.lineTo(cx+s[0]*R,cy+s[1]*R); ctx.stroke(); } ctx.restore(); };
+  if(hitMark>0) mk('#ffffff',2,4,9,Math.min(1,hitMark*5));
+  if(hitKill>0) mk('#ff3030',2.5,3,12,Math.min(1,hitKill*4));
+}
 function drawProjectiles(){
   for(const p of projectiles){
     const d=Math.hypot(p.x-P.x,p.y-P.y); if(d>16)continue;
@@ -1048,8 +1058,8 @@ const WEAPONS={
 };
 const WEAPON_ORDER=['fists','bat','sword','pistol','shotgun','uzi','rifle','mg'];
 // what Falcon starts with and what ammo he has. Fists always; pistol to start.
-const owned={fists:true,bat:false,sword:false,pistol:true,shotgun:false,uzi:false,rifle:false,mg:false};
-const ammo={pistol:24, shells:0, smg:0, rifle:0, mg:0};
+const owned={fists:true,bat:false,sword:false,pistol:true,shotgun:true,uzi:false,rifle:false,mg:false};
+const ammo={pistol:24, shells:24, smg:0, rifle:0, mg:0};
 /* ---- PICKUPS: weapons, ammo, health placed along the linear route as
    breadcrumbs (research: pickups pull the player forward + reward the path).
    Weapons appear once, tied to space type; ammo sparse; health rare. Each: {x,y,
@@ -1072,6 +1082,7 @@ const L1_PICKUPS=[
 ];
 let curWeapon='pistol';
 let fireCd=0, muzzle=0, recoil=0;   // recoil: viewmodel kick 0..1
+let hitMark=0, hitKill=0;   // hitmarker feedback timers
 
 function curW(){ return WEAPONS[curWeapon]; }
 function switchWeapon(key){
@@ -1234,8 +1245,10 @@ function render(){
   drawPickups();
   drawKeys();
   drawParticles();
+  drawProjectiles();
   if(muzzle>0){ctx.fillStyle='rgba(255,220,140,'+(muzzle*0.5)+')';ctx.fillRect(0,0,W,H);}
   drawWeaponView();
+  drawHitmarker();
   drawScreenFX();
   drawDamageVignette();
   drawBossBar();
@@ -1446,6 +1459,72 @@ function vmFlash(g,mx,my,s,a){
   g.closePath(); g.fill(); g.restore();
 }
 
+const VM={ gun:'#3b424c',gunD:'#191d23',gunL:'#828c98',
+  poly:'#24262b',polyD:'#0f1012',polyL:'#474a51',
+  wood:'#6e4c2e',woodD:'#362410',woodL:'#a8783f',
+  brass:'#b1893a',brassD:'#6b4f18',brassL:'#e7c56e',
+  ink:'#101114' };
+// cel-shaded metal box: top light, bottom shadow, left shade, right rim, hard outline
+function vmBox(g,x,y,w,h,c,d,l){ if(w<=0||h<=0)return;
+  g.fillStyle=c; g.fillRect(x,y,w,h);
+  g.fillStyle=l; g.fillRect(x,y,w,Math.max(2,h*0.16));
+  g.fillStyle=d; g.fillRect(x,y+h-Math.max(2,h*0.24),w,Math.max(2,h*0.24));
+  g.fillStyle=d; g.fillRect(x,y,Math.max(2,w*0.10),h);
+  g.save(); g.globalAlpha=0.45; g.fillStyle=l; g.fillRect(x+w-Math.max(2,w*0.09),y,Math.max(2,w*0.09),h); g.restore();
+  g.strokeStyle=VM.ink; g.lineWidth=2; g.strokeRect(x+1,y+1,w-2,h-2); }
+// foreshortened barrel going AWAY (narrows upward), cylindrical shading, bore end-on
+function vmBarrel(g,cx,yTop,yBot,wTop,wBot,c,d,l){
+  const quad=(ax,ay,bx,by,cx2,cy2,dx,dy,col)=>{ g.beginPath(); g.moveTo(ax,ay); g.lineTo(bx,by); g.lineTo(cx2,cy2); g.lineTo(dx,dy); g.closePath(); g.fillStyle=col; g.fill(); };
+  quad(cx-wBot/2,yBot, cx-wTop/2,yTop, cx+wTop/2,yTop, cx+wBot/2,yBot, c);
+  quad(cx-wBot/2,yBot, cx-wTop/2,yTop, cx-wTop*0.12,yTop, cx-wBot*0.12,yBot, d);
+  quad(cx+wBot*0.08,yBot, cx+wTop*0.08,yTop, cx+wTop*0.32,yTop, cx+wBot*0.32,yBot, l);
+  g.strokeStyle=VM.ink; g.lineWidth=2;
+  g.beginPath(); g.moveTo(cx-wBot/2,yBot); g.lineTo(cx-wTop/2,yTop); g.lineTo(cx+wTop/2,yTop); g.lineTo(cx+wBot/2,yBot); g.closePath(); g.stroke();
+  g.beginPath(); g.ellipse(cx,yTop,wTop*0.52,Math.max(2,wTop*0.24),0,0,7); g.fillStyle=l; g.fill(); g.strokeStyle=VM.ink; g.lineWidth=2; g.stroke();
+  g.beginPath(); g.ellipse(cx,yTop,wTop*0.28,Math.max(1.5,wTop*0.13),0,0,7); g.fillStyle='#070809'; g.fill();
+  return {mx:cx,my:yTop,mw:wTop}; }
+const MAT={ gun:[VM.gun,VM.gunD,VM.gunL], poly:[VM.poly,VM.polyD,VM.polyL], wood:[VM.wood,VM.woodD,VM.woodL], brass:[VM.brass,VM.brassD,VM.brassL] };
+// TOP-DOWN hold: you look down on your weapon. Stock/trigger near you (bottom, in hands);
+// the barrel recedes AWAY toward the enemy, narrowing to a tiny muzzle at the horizon.
+// You never see the bore end-on. Muzzle flash projects forward into the distance.
+const GUNS2={
+  pistol:{ off:4, nearW:50,recTopW:30,barrelW:18,farW:8, mid:0.46, far:0.72, body:'gun',  barrel:'gun', two:false, flash:22, sight:true },
+  shotgun:{off:0, nearW:74,recTopW:46,barrelW:24,farW:12, mid:0.44, far:0.66, body:'wood', barrel:'gun', two:true,  flash:34, pump:true },
+  uzi:{    off:0, nearW:50,recTopW:34,barrelW:15,farW:8,  mid:0.48, far:0.70, body:'poly', barrel:'gun', two:true,  flash:24 },
+  rifle:{  off:0, nearW:60,recTopW:34,barrelW:14,farW:7,  mid:0.42, far:0.64, body:'wood', barrel:'gun', two:true,  flash:28, scope:true },
+  mg:{     off:0, nearW:92,recTopW:56,barrelW:32,farW:16, mid:0.46, far:0.66, body:'gun',  barrel:'gun', two:true,  flash:40, belt:true },
+};
+// a tapered top-face segment (wide near y0 -> narrow far y1): top ridge highlight + side shadow + outline
+function trap(g,cx,y0,w0,y1,w1,m){ const c=m[0],d=m[1],l=m[2];
+  const quad=(x1,yy1,x2,yy2,x3,yy3,x4,yy4,col)=>{ g.beginPath(); g.moveTo(x1,yy1); g.lineTo(x2,yy2); g.lineTo(x3,yy3); g.lineTo(x4,yy4); g.closePath(); g.fillStyle=col; g.fill(); };
+  quad(cx-w0/2,y0, cx-w1/2,y1, cx+w1/2,y1, cx+w0/2,y0, c);
+  quad(cx-w0/2,y0, cx-w1/2,y1, cx-w1*0.30,y1, cx-w0*0.30,y0, d);
+  quad(cx+w0*0.30,y0, cx+w1*0.30,y1, cx+w1/2,y1, cx+w0/2,y0, d);
+  quad(cx-w0*0.12,y0, cx-w1*0.12,y1, cx+w1*0.12,y1, cx+w0*0.12,y0, l);
+  g.strokeStyle=VM.ink; g.lineWidth=2; g.beginPath(); g.moveTo(cx-w0/2,y0); g.lineTo(cx-w1/2,y1); g.lineTo(cx+w1/2,y1); g.lineTo(cx+w0/2,y0); g.closePath(); g.stroke();
+}
+function drawOriented(weapon,g,bx,by,kick){
+  const cfg=GUNS2[weapon]; if(!cfg) return;
+  const kb=kick*16;
+  const cx=W*0.5+(cfg.off||0)+bx*0.5;
+  const nearY=H*1.05+by*0.5+kb, farY=H*cfg.far+by*0.25+kb*0.6;
+  const span=nearY-farY, midY=nearY-span*cfg.mid;
+  // raised wood fore-end / pump sits UNDER the barrel visually (draw first)
+  if(cfg.pump){ trap(g,cx,midY+span*0.14,cfg.barrelW+12,midY-span*0.02,cfg.barrelW+6,MAT.wood); }
+  trap(g,cx,nearY,cfg.nearW,midY,cfg.recTopW,MAT[cfg.body]);     // receiver (near)
+  trap(g,cx,midY,cfg.barrelW,farY,cfg.farW,MAT[cfg.barrel]);     // barrel (recedes away)
+  // muzzle tip seen from ABOVE — a small flat cap, never the bore
+  g.fillStyle=MAT[cfg.barrel][1]; g.beginPath(); g.moveTo(cx-cfg.farW/2,farY); g.lineTo(cx-cfg.farW*0.6,farY-3); g.lineTo(cx+cfg.farW*0.6,farY-3); g.lineTo(cx+cfg.farW/2,farY); g.closePath(); g.fill(); g.strokeStyle=VM.ink; g.lineWidth=2; g.stroke();
+  if(cfg.scope){ trap(g,cx,midY+6,12,farY+span*0.22,8,MAT.poly); }
+  if(cfg.belt){ g.fillStyle=VM.brass; g.fillRect(cx+cfg.recTopW*0.26,midY+4,10,span*0.26); g.strokeStyle=VM.ink; g.lineWidth=2; g.strokeRect(cx+cfg.recTopW*0.26,midY+4,10,span*0.26); }
+  if(cfg.sight){ g.fillStyle=VM.gunD; g.fillRect(cx-2,farY+span*0.14,4,5); }
+  // hands grip the stock at the near end (bottom)
+  if(cfg.two){ vmArm(g,cx-cfg.nearW*0.30,nearY-6,0.25,42,-1,H); vmArm(g,cx+cfg.nearW*0.28,nearY-6,-0.25,44,1,H);
+    vmFist(g,cx-cfg.nearW*0.30,nearY-18,50,40,-1); vmFist(g,cx+cfg.nearW*0.28,nearY-14,54,44,1); }
+  else { vmArm(g,cx+6,nearY-6,0.0,46,1,H); vmFist(g,cx,nearY-16,58,46,1); }
+  // muzzle flash projects forward from the tip, into the distance
+  vmFlash(g,cx,farY-2, cfg.flash*(0.7+0.9*muzzle), muzzle);
+}
 function drawWeaponView(){
   const g=ctx, weapon=curWeapon;
   const amp=moving?1:0.15;                       // uses this build's own bobPhase/moving
@@ -1490,36 +1569,7 @@ function drawWeaponView(){
     g.restore(); return;
   }
 
-  const S=GUNS[weapon]; if(!S){ g.restore(); return; }
-  const cx=W*0.5+S.offX+bx;
-  const y0=H+14-by+kick*S.kick;
-
-  // 1. FOREARMS FIRST — they run off the bottom edge and must sit BEHIND the
-  //    weapon, or they read as a skin wedge painted across the receiver.
-  const fy=y0-S.grip.y+kick*S.kick;
-  vmArm(g,cx+S.grip.x,fy+14,S.grip.a,46,1,H);          // firing arm exits bottom-right
-  let sy=0;
-  if(S.support){
-    sy=y0-S.support.y+kick*S.kick*0.55;
-    vmArm(g,cx+S.support.x,sy+14,S.support.a,42,-1,H); // support arm exits bottom-LEFT
-  }
-
-  // 2. WEAPON BODY over the arms. Flat stacked slabs, near-constant width,
-  //    taper confined to the top of the stack. Measured off Wolf3D: aspect
-  //    h/w < 1, top reaching only ~1/3 up the screen.
-  let y=y0, mx=cx, my=y0, mw=0;
-  for(const seg of S.segs){
-    y-=seg.h;
-    vmSlab(g,cx+(seg.dx||0)-seg.w/2,y,seg.w,seg.h,seg.c,seg.d,seg.l);
-    mx=cx+(seg.dx||0); my=y; mw=seg.w;
-  }
-  vmBore(g,mx,my+2,mw*0.30,S.segs[0].c===VM_PAL.blue);
-  if(S.sight) vmSlab(g,mx-3,my+S.sight+6,6,9,VM_PAL.steelD,'#0c0e10',VM_PAL.steel);
-
-  // 3. FISTS ON TOP — the overlap on the fore-end is what reads as depth
-  if(S.support) vmFist(g,cx+S.support.x,sy,S.support.w,S.support.h,-1);
-  vmFist(g,cx+S.grip.x,fy,S.grip.w,S.grip.h,1);
-  vmFlash(g,mx,my-4,S.flash*(0.7+0.5*muzzle),muzzle);
+  drawOriented(weapon, g, bx, by, kick);
   g.restore();
 }
 
@@ -1527,37 +1577,53 @@ function drawWeaponView(){
    pistol = 20.5%W x 32.2%H (aspect 0.79), top ~33%H above the bottom edge,
    horizontally centred, taper only across the top ~40% and only ~15%. */
 const GUNS={
-  pistol:{ offX:0, kick:12, flash:22,
-    grip:{x:0,y:4,w:78,h:52,a:0.16},
-    segs:[ {h:34,w:98,dx:0}, {h:30,w:92,dx:5}, {h:22,w:80,dx:-3} ],
-    sight:3 },
-  shotgun:{ offX:0, kick:20, flash:32,
-    grip:{x:-34,y:2,w:74,h:50,a:0.24},
-    support:{x:34,y:4,w:70,h:48,a:0.30},
-    segs:[ {h:38,w:132,dx:0,c:VM_PAL.wood,d:VM_PAL.woodD,l:VM_PAL.woodL},
-           {h:34,w:124,dx:6},
-           {h:28,w:102,dx:-4,c:VM_PAL.wood,d:VM_PAL.woodD,l:VM_PAL.woodL} ],
-    sight:2 },
-  uzi:{ offX:-18, kick:9, flash:22,
-    grip:{x:0,y:2,w:72,h:50,a:0.18},
-    support:{x:30,y:34,w:60,h:42,a:0.40},
-    segs:[ {h:32,w:96,dx:0}, {h:26,w:90,dx:6}, {h:20,w:74,dx:-2} ],
-    sight:3 },
-  rifle:{ offX:24, kick:18, flash:26,   // shouldered: sits right, barrel steps left
-    grip:{x:-10,y:2,w:74,h:50,a:0.22},
-    support:{x:-40,y:38,w:64,h:44,a:0.46},
-    segs:[ {h:38,w:104,dx:0,c:VM_PAL.wood,d:VM_PAL.woodD,l:VM_PAL.woodL},
-           {h:30,w:96,dx:-6},
-           {h:24,w:82,dx:-14,c:VM_PAL.wood,d:VM_PAL.woodD,l:VM_PAL.woodL},
-           {h:20,w:72,dx:-22} ],
-    sight:4 },
-  mg:{ offX:0, kick:11, flash:36,
-    grip:{x:-52,y:0,w:78,h:52,a:0.30},
-    support:{x:52,y:2,w:74,h:50,a:0.34},
-    segs:[ {h:40,w:152,dx:0,c:VM_PAL.blue,d:VM_PAL.blueD,l:VM_PAL.blueL},
-           {h:34,w:142,dx:7,c:VM_PAL.blue,d:VM_PAL.blueD,l:VM_PAL.blueL},
-           {h:30,w:114,dx:-5} ],
-    sight:0 },
+  // v: all positions are HEIGHT ABOVE SCREEN BOTTOM. parts draw far->near.
+  pistol:{ offX:0, kick:14, flash:22,
+    grip:{x:6,b:46,w:60,h:46,a:0.14},
+    parts:[
+      {t:'barrel', b0:104,b1:152, w0:22,w1:12},
+      {t:'box', x:0,b:68,w:56,h:36},                                  // slide
+      {t:'box', x:-2,b:38,w:42,h:32, c:VM.poly,d:VM.polyD,l:VM.polyL},// frame
+      {t:'box', x:19,b:104,w:10,h:7, c:VM.gunD,d:VM.polyD,l:VM.gun},  // rear sight
+    ]},
+  shotgun:{ offX:0, kick:22, flash:30,
+    grip:{x:-32,b:44,w:64,h:46,a:0.22},
+    support:{x:26,b:96,w:58,h:40,a:0.40},
+    parts:[
+      {t:'barrel', b0:122,b1:190, w0:24,w1:13},
+      {t:'box', x:0,b:78,w:72,h:46},                                  // receiver
+      {t:'box', x:2,b:96,w:48,h:26, c:VM.wood,d:VM.woodD,l:VM.woodL}, // pump fore-end
+      {t:'box', x:-16,b:40,w:52,h:38, c:VM.wood,d:VM.woodD,l:VM.woodL}, // stock wrist
+      {t:'box', x:30,b:104,w:10,h:7, c:VM.brass,d:VM.brassD,l:VM.brassL}, // bead sight
+    ]},
+  uzi:{ offX:-14, kick:9, flash:22,
+    grip:{x:2,b:42,w:58,h:44,a:0.16},
+    support:{x:26,b:96,w:50,h:38,a:0.42},
+    parts:[
+      {t:'barrel', b0:100,b1:150, w0:16,w1:9},
+      {t:'box', x:0,b:56,w:62,h:46, c:VM.poly,d:VM.polyD,l:VM.polyL}, // receiver
+      {t:'box', x:0,b:2,w:24,h:54, c:VM.poly,d:VM.polyD,l:VM.polyL},  // magazine
+      {t:'box', x:0,b:102,w:14,h:8, c:VM.gunD,d:VM.polyD,l:VM.gun},   // front sight
+    ]},
+  rifle:{ offX:16, kick:20, flash:26,
+    grip:{x:-14,b:42,w:62,h:46,a:0.20},
+    support:{x:-44,b:84,w:56,h:40,a:0.46},
+    parts:[
+      {t:'barrel', b0:120,b1:196, w0:14,w1:7},
+      {t:'box', x:-6,b:52,w:80,h:40, c:VM.wood,d:VM.woodD,l:VM.woodL},// wood stock/body
+      {t:'box', x:-2,b:90,w:52,h:24},                                 // receiver
+      {t:'box', x:-2,b:116,w:42,h:12, c:VM.poly,d:VM.polyD,l:VM.polyL}, // scope tube
+      {t:'box', x:-18,b:117,w:10,h:10, c:VM.gunD,d:VM.polyD,l:VM.gun},// scope mount
+    ]},
+  mg:{ offX:0, kick:12, flash:38,
+    grip:{x:-46,b:42,w:68,h:48,a:0.30},
+    support:{x:48,b:48,w:64,h:44,a:0.34},
+    parts:[
+      {t:'barrel', b0:110,b1:188, w0:34,w1:18},                       // heavy barrel
+      {t:'box', x:0,b:52,w:98,h:56},                                  // receiver
+      {t:'box', x:0,b:100,w:46,h:16, c:VM.poly,d:VM.polyD,l:VM.polyL},// shroud collar
+      {t:'box', x:40,b:66,w:24,h:36, c:VM.brass,d:VM.brassD,l:VM.brassL}, // ammo box
+    ]},
 };
 function drawMinimap(){
   const cell=2.2, pad=6, mw=MW*cell, mh=MH*cell;
@@ -2559,7 +2625,7 @@ function rayHit(a, range){
     // forgiving aim: enemy "width" is generous and never shrinks below a floor,
     // so a roughly-aimed shot at a moving target still connects (Wolf3D/Doom had
     // strong auto-aim on purpose — the fun is the fight, not pixel-precise aim).
-    const aim=Math.max(0.14, Math.atan2(0.7*(e.sz||1),dist));
+    const aim=Math.max(0.18, Math.atan2(0.85*(e.sz||1),dist));
     if(Math.abs(rel)<aim && los(P.x,P.y,e.x,e.y) && dist<bestD){best=e;bestD=dist;}
   }
   return best?{e:best,dist:bestD}:null;
@@ -2598,6 +2664,7 @@ function hitEnemy(e,amount,dtype){
       if(!e._clang||T-e._clang>0.3){ e._clang=T; SFX.melee&&SFX.melee(e.x,e.y); } }
   }
   e.hp-=amount; e.hitFlash=e.hitFlash||0.08; e.dmg=Math.min(1,1-e.hp/e.maxhp);
+  hitMark=Math.max(hitMark,0.16); if(e.hp<=0)hitKill=0.30;
   if(typeof bloodSpray==='function') bloodSpray(e.x,e.y);
   // knockback + stagger scaled by (1-mass); melee & pellets knock harder up close
   const kb=(1-e.mass)*0.25*(dtype==='melee'||dtype==='pellet'?1.6:1), dx=Math.cos(P.a),dy=Math.sin(P.a);
@@ -2734,16 +2801,30 @@ function canSee(e){
   const vis=0.35+lightAt(P.x,P.y);          // lurk in darkness = seen later
   return dist < sr*Math.min(1,vis);
 }
+// solid test with a clearance radius so bodies keep off walls (no wedging)
+function solidR(x,y,r){ r=r||0.28; return solid(x,y)||solid(x+r,y)||solid(x-r,y)||solid(x,y+r)||solid(x,y-r); }
+// safety net: if an enemy's centre ends up inside a wall (knockback, tight spawn,
+// doorway corner), shove it to the nearest open floor so it can never stay stuck.
+function unstick(e){
+  if(!solidR(e.x,e.y,0.12)) return;
+  for(let rad=0.25; rad<=3.5; rad+=0.25){ for(let a=0;a<6.2832;a+=0.524){
+    const nx=e.x+Math.cos(a)*rad, ny=e.y+Math.sin(a)*rad;
+    if(!solidR(nx,ny,0.22)){ e.x=nx; e.y=ny; return; } } }
+}
 function moveToward(e,tx,ty,speed,dt){
-  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d,step=speed*dt;
-  // greedy with wall-slide; if fully blocked, nudge along a perpendicular so
-  // they don't freeze against a doorway edge
-  let moved=false;
-  if(!solid(e.x+ux*step,e.y)){e.x+=ux*step;moved=true;}
-  if(!solid(e.x,e.y+uy*step)){e.y+=uy*step;moved=true;}
-  if(!moved){ if(!solid(e.x+uy*step,e.y))e.x+=uy*step; else if(!solid(e.x,e.y+ux*step))e.y+=ux*step; }
-  if(moved) e.heading=Math.atan2(uy,ux);     // face the way it actually walks
-  return d;
+  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,step=speed*dt,base=Math.atan2(dy,dx);
+  // try the direct heading first, then widening detours AROUND obstacles toward
+  // the target; each with a clearance radius. Steering, not pressing into walls.
+  for(const off of [0,0.5,-0.5,1.0,-1.0,1.6,-1.6]){
+    const a=base+off, ux=Math.cos(a), uy=Math.sin(a);
+    if(!solidR(e.x+ux*step, e.y+uy*step, 0.28)){ e.x+=ux*step; e.y+=uy*step; e.heading=a; return d; }
+    // axis-separated slide for this heading (follow a wall instead of stopping)
+    let moved=false;
+    if(!solidR(e.x+ux*step, e.y, 0.28)){ e.x+=ux*step; moved=true; }
+    if(!solidR(e.x, e.y+uy*step, 0.28)){ e.y+=uy*step; moved=true; }
+    if(moved){ e.heading=Math.atan2(uy,ux); return d; }
+  }
+  return d;                                    // truly boxed in this frame
 }
 function updateEnemies(dt){
   for(const e of enemies){
@@ -2754,6 +2835,7 @@ function updateEnemies(dt){
         if(bp.r<0.72){ bp.r+=dt*0.35; } else { bp.grow=0; } } }
       continue;
     }
+    unstick(e);                                // never remain wedged in a wall
     if(e.staggerT>0){ e.staggerT-=dt; continue; }
     const dx=P.x-e.x,dy=P.y-e.y,dist=Math.hypot(dx,dy);
     const sees=canSee(e);
@@ -3377,6 +3459,7 @@ let running=false;
 function step(dt){
   if(!running)return;
   if(fireCd>0)fireCd-=dt; if(muzzle>0)muzzle-=dt*6; if(recoil>0)recoil-=dt*6;
+  if(hitMark>0)hitMark-=dt*5; if(hitKill>0)hitKill-=dt*4;
   if(!dead&&!won&&!(MP.active&&MP.dead)){
     const spd=2.6*dt,rot=2.2*dt;let mvF=0,mvS=0;
     if(keys['w']||keys['arrowup'])mvF+=1; if(keys['s']||keys['arrowdown'])mvF-=1;
@@ -3673,8 +3756,9 @@ const MP = {
   room:{state:'lobby',arena:0,pool:[0,0],startAt:0,why:''}, myReady:false, myVote:null,
   _appliedState:null, _inGame:false, _iv:0, lobbyStart:0,
 
-  start(mode, name){
-    this.mode=mode; this.pvp=(mode!=='zombies');
+  skin:'operator',
+  start(mode, name, skin){
+    this.mode=mode; this.pvp=(mode!=='zombies'); this.skin=skin||'operator';
     this.name=(name||'FALCON').slice(0,12).toUpperCase();
     this.team = this.pvp&&mode!=='dm' ? 'red' : (mode==='zombies'?'coop':'ffa');
     this.k=0; this.d=0; this.fl=false; this.players={}; this.killfeed=[];
@@ -3759,7 +3843,7 @@ const MP = {
       if(this.mode==='tdm'||this.mode==='ctf'){ let r=0,b=0; snap.forEach(c=>{const t=(c.val()||{}).team; if(t==='red')r++; else if(t==='blue')b++;}); this.team=(r<=b)?'red':'blue'; }
       else if(this.mode==='dm') this.team='ffa'; else this.team='coop';
       const pool0=(this.room&&this.room.pool)?this.room.pool:this._poolFor(this.mode);
-      const rec={name:this.name,team:this.team,x:0,y:0,a:0,hp:100,w:curWeapon,k:0,d:0,fl:false,fr:0,ready:false,vote:pool0[0],t:firebase.database.ServerValue.TIMESTAMP};
+      const rec={name:this.name,team:this.team,skin:this.skin,x:0,y:0,a:0,hp:100,w:curWeapon,k:0,d:0,fl:false,fr:0,ready:false,vote:pool0[0],t:firebase.database.ServerValue.TIMESTAMP};
       meRef.set(rec); meRef.onDisconnect().remove(); this.roomRef.child('inbox/'+this.uid).onDisconnect().remove();
       const pref=this.roomRef.child('players');
       pref.on('child_added',s=>{ if(s.key!==this.uid) this._addPlayer(s.key,s.val()); });
@@ -3790,7 +3874,7 @@ const MP = {
   shootRay(a, range, dmg, wpn){
     if(!this.pvp) return;
     const hit=this._rayPlayer(a, range);
-    if(hit){ this._hitSpark(hit.x,hit.y);
+    if(hit){ this._hitSpark(hit.x,hit.y); hitMark=Math.max(hitMark,0.16);
       if(this.roomRef) this.roomRef.child('inbox/'+hit.id).push({from:this.uid,fromName:this.name,dmg,wpn:wpn||'gun',t:Date.now()});
     }
   },
@@ -3943,7 +4027,7 @@ const MP = {
     const size=Math.min(H*2.2,(H/d*1.05)|0), screenX=(0.5+rel/FOV)*W, sx=screenX-size/2;
     const floorY=H/2+(H/d)/2, sy=floorY-size;
     const view=spriteView(p.rx,p.ry,p.ra);
-    const spr=opSprite(view, p.team, p.flash>0);
+    const spr=opSprite(view, p.team, p.flash>0, p.skin||'operator');
     const SS=spr.width, lit=Math.min(1,0.35+1.0*lightAt(p.rx,p.ry));
     let fg=(d-2)/(13-2); fg=fg<0?0:fg>1?1:fg;
     const tmp=document.createElement('canvas'); tmp.width=SS;tmp.height=SS;
@@ -4124,33 +4208,85 @@ const MP = {
 // Distinct from patients (upright, armed, squared shoulders) so friend/foe reads
 // instantly at fog distance (squint test). Cached per view+team+flash.
 const _opCache={};
-function opSprite(view, team, flash){
-  const key=view+'|'+team+'|'+(flash?1:0); if(_opCache[key]) return _opCache[key];
-  const S=64,cv2=document.createElement('canvas'); cv2.width=S;cv2.height=S; const c=cv2.getContext('2d');
-  const jacket = team==='blue'?['#16324f','#254e79','#3f79b0'] : team==='red'?['#4a1414','#7a2222','#b03a3a'] : ['#2a2a1a','#4a4a2e','#6f6f45'];
-  const skin=['#6b4a3a','#8a6350','#a97e68'], steel=['#15181c','#2a3038','#525c68'];
-  if(flash){ jacket[0]=jacket[1]=jacket[2]='#ffd0d0'; }
-  const cx=S/2, box=(x,y,w,h,col)=>{c.fillStyle=col;c.fillRect(x|0,y|0,Math.max(1,w|0),Math.max(1,h|0));};
-  // legs
-  box(cx-9,50,7,12,jacket[0]); box(cx+2,50,7,12,jacket[0]);
-  // torso (squared shoulders)
-  box(cx-12,28,24,24,jacket[1]); box(cx-12,28,24,4,jacket[2]);
-  // head
-  box(cx-6,16,12,12, view==='back'?jacket[1]:skin[1]);
-  if(view!=='back'){ box(cx-6,16,12,3,skin[2]); }
-  // face / eyes only front & sides
-  if(view==='front'){ box(cx-4,21,2,2,'#101010'); box(cx+2,21,2,2,'#101010'); }
-  else if(view==='left'){ box(cx-4,21,2,2,'#101010'); }
-  else if(view==='right'){ box(cx+2,21,2,2,'#101010'); }
-  // arms + forward weapon depending on facing
-  if(view==='front'){ box(cx-16,30,5,18,jacket[0]); box(cx+11,30,5,18,jacket[0]);
-    box(cx-3,34,20,6,steel[1]); box(cx+15,35,8,4,steel[2]); }         // gun across, barrel to our right-ish
-  else if(view==='back'){ box(cx-16,30,5,18,jacket[0]); box(cx+11,30,5,18,jacket[0]); }
-  else if(view==='left'){ box(cx-14,30,6,18,jacket[0]); box(cx-20,35,18,5,steel[1]); box(cx-24,36,6,3,steel[2]); }
-  else /*right*/{ box(cx+8,30,6,18,jacket[0]); box(cx+2,35,18,5,steel[1]); box(cx+18,36,6,3,steel[2]); }
-  // 1px dark outline for background separation
+const SKINS=['operator','slasher','wraith','demon','revenant','butcher'];
+const SKIN_NAMES={operator:'OPERATOR',slasher:'SLASHER',wraith:'WRAITH',demon:'DEMON',revenant:'REVENANT',butcher:'BUTCHER'};
+// badass customizable MP characters — 4-view billboards, team shown as accent/glow
+function opSprite(view, team, flash, skin){
+  skin=skin||'operator';
+  const key=skin+'|'+view+'|'+team+'|'+(flash?1:0); if(_opCache[key]) return _opCache[key];
+  const S=64, cv=document.createElement('canvas'); cv.width=S;cv.height=S; const c=cv.getContext('2d');
+  const tint = team==='blue'?['#1b3a5c','#2f5e8f','#6aa6e6'] : team==='red'?['#5a1818','#8a2626','#d85050'] : ['#5a4a12','#8a7020','#e6c05a'];
+  const glow = team==='blue'?'#8cf' : team==='red'?'#f88' : '#fe8';
+  const cx=32, mir=(view==='left'), v=mir?'right':view;
+  const B=(x,y,w,h,col,a)=>{ c.globalAlpha=(a==null?1:a); c.fillStyle=col; c.fillRect(x|0,y|0,Math.max(1,w|0),Math.max(1,h|0)); c.globalAlpha=1; };
+  const sh=(x,y,w,h,base,lite,dark)=>{ B(x,y,w,h,base); B(x,y,w,Math.max(1,h*0.2),lite); B(x,y+h-Math.max(1,h*0.24),w,Math.max(1,h*0.24),dark); };
+  switch(skin){
+    case 'operator':{ const fat=['#2b3326','#3c4733','#55634a'], vest=['#20242a','#2f353d','#49525e'];
+      sh(cx-9,46,7,16,fat[1],fat[2],fat[0]); sh(cx+2,46,7,16,fat[1],fat[2],fat[0]); B(cx-9,58,7,4,'#15130f'); B(cx+2,58,7,4,'#15130f');
+      sh(cx-12,28,24,20,vest[1],vest[2],vest[0]); B(cx-12,28,24,3,tint[2]); B(cx-6,34,12,8,tint[1]);
+      sh(cx-15,27,6,8,vest[0],vest[1],vest[0]); sh(cx+9,27,6,8,vest[0],vest[1],vest[0]);
+      sh(cx-6,14,12,12,vest[0],vest[1],'#0e1013');
+      if(v!=='back'){ B(cx-5,20,10,3,'#0a0c0e'); B(v==='right'?cx+1:cx-4,20,3,2,glow); }
+      if(v==='front'){ B(cx-16,30,5,16,fat[0]); B(cx+11,30,5,16,fat[0]); B(cx-4,33,22,5,'#1a1d22'); B(cx+16,34,10,4,'#2a2f36'); }
+      else if(v==='back'){ B(cx-16,30,5,16,fat[0]); B(cx+11,30,5,16,fat[0]); }
+      else { B(cx+7,30,6,16,fat[0]); B(cx+2,33,20,5,'#1a1d22'); B(cx+20,34,8,4,'#2a2f36'); }
+      break; }
+    case 'slasher':{ const suit=['#171a1e','#23282e','#343b44'], mask=['#c9c6bc','#e2dfd6','#8f8d84'];
+      sh(cx-8,46,7,16,suit[1],suit[2],suit[0]); sh(cx+1,46,7,16,suit[1],suit[2],suit[0]); B(cx-8,59,7,3,'#0a0a0a'); B(cx+1,59,7,3,'#0a0a0a');
+      sh(cx-10,26,20,22,suit[1],suit[2],suit[0]); B(cx-10,26,20,2,tint[2]);
+      if(v==='back'){ sh(cx-6,12,12,13,'#1a1713','#2a241c','#0d0b09'); }
+      else { sh(cx-6,12,12,13,mask[0],mask[1],mask[2]); B(cx-4,17,2,3,'#0a0a0a'); B(cx+2,17,2,3,'#0a0a0a'); B(cx-2,22,4,1,'#5a5a56'); }
+      if(v==='front'){ B(cx-15,28,5,18,suit[0]); B(cx+10,28,5,18,suit[0]); B(cx+15,15,3,31,'#aeb8c0'); B(cx+15,15,1,31,'#eef2f6'); B(cx+14,44,5,4,'#6a4a2a'); }
+      else if(v==='back'){ B(cx-15,28,5,18,suit[0]); B(cx+10,28,5,18,suit[0]); B(cx+15,15,3,31,'#8a9098'); }
+      else { B(cx+8,28,6,18,suit[0]); B(cx+18,13,3,33,'#aeb8c0'); B(cx+18,13,1,33,'#eef2f6'); B(cx+17,44,5,4,'#6a4a2a'); }
+      B(cx-2,40,5,3,'#5a0f0f'); break; }
+    case 'wraith':{ const A=0.74, robe=['#2e3a44','#45545f','#1c242b'];
+      for(let i=0;i<8;i++){ const yy=30+i*4, ww=14+i*2; B(cx-ww/2,yy,ww,4, i%2?robe[0]:robe[2], A); }
+      for(let k=-2;k<=2;k++){ B(cx+k*5-1,60,3,(k%2?3:6),robe[2],A*0.8); }
+      B(cx-13,30,5,16,robe[1],A); B(cx+9,30,5,16,robe[1],A);
+      if(v!=='back'){ B(cx-15,44,5,6,robe[0],A); B(cx+11,44,5,6,robe[0],A); }
+      sh(cx-7,12,14,15,robe[2],robe[1],'#0c1013'); B(cx-7,12,14,15,'#0c1216',A*0.5);
+      if(v!=='back'){ B(cx-5,18,10,8,'#05080a',A); B(cx-4,20,3,3,glow); B(cx+2,20,3,3,glow); }
+      break; }
+    case 'demon':{ const hide=['#4a1518','#6e2320','#8f3a2c'], claw='#d8c8b0';
+      B(cx-10,44,7,10,hide[0]); B(cx-11,52,9,8,hide[1]); B(cx-11,59,9,3,'#120606');
+      B(cx+3,44,7,10,hide[0]); B(cx+2,52,9,8,hide[1]); B(cx+2,59,9,3,'#120606');
+      sh(cx-13,24,26,22,hide[1],hide[2],hide[0]); B(cx-13,24,26,3,hide[2]);
+      sh(cx-17,22,8,9,hide[0],hide[1],hide[0]); sh(cx+9,22,8,9,hide[0],hide[1],hide[0]);
+      const hy=14; sh(cx-6,hy,12,11,hide[1],hide[2],hide[0]);
+      B(cx-8,hy-5,3,7,'#20100a'); B(cx+5,hy-5,3,7,'#20100a'); B(cx-9,hy-7,2,3,'#20100a'); B(cx+7,hy-7,2,3,'#20100a');
+      if(v!=='back'){ B(cx-4,hy+4,3,2,glow); B(cx+1,hy+4,3,2,glow); }
+      if(v==='front'){ B(cx-18,28,6,20,hide[0]); B(cx+12,28,6,20,hide[0]); B(cx-19,46,6,4,claw); B(cx+13,46,6,4,claw); }
+      else if(v==='back'){ B(cx-18,28,6,20,hide[0]); B(cx+12,28,6,20,hide[0]); }
+      else { B(cx+10,28,6,20,hide[0]); B(cx+11,46,6,4,claw); B(cx-14,30,5,16,hide[0]); }
+      break; }
+    case 'revenant':{ const bone=['#b9b2a0','#d7d1c0','#8a8475'], gear=['#2a2e22','#3b4231','#1b1e16'];
+      sh(cx-8,46,7,16,gear[0],gear[1],'#0e100b'); sh(cx+1,46,7,16,gear[0],gear[1],'#0e100b');
+      sh(cx-11,28,22,20,gear[1],gear[2],gear[0]); B(cx-11,28,22,2,tint[2]);
+      for(let r=0;r<3;r++){ B(cx-5,32+r*4,10,2,bone[2]); }
+      sh(cx-14,27,6,7,gear[0],gear[1],gear[0]); sh(cx+8,27,6,7,gear[0],gear[1],gear[0]);
+      if(v==='back'){ sh(cx-6,13,12,12,bone[2],bone[0],'#5a5548'); }
+      else { sh(cx-6,13,12,12,bone[0],bone[1],bone[2]); B(cx-4,18,3,3,'#0a0a0a'); B(cx+1,18,3,3,'#0a0a0a'); B(cx-4,18,3,1,glow); B(cx+1,18,3,1,glow); B(cx-1,22,2,2,'#0a0a0a'); B(cx-3,24,6,1,'#2a2a28'); }
+      if(v==='front'){ B(cx-15,30,5,16,gear[0]); B(cx+10,30,5,16,gear[0]); B(cx-4,33,22,4,'#1a1d18'); B(cx+16,34,9,3,'#2a2f26'); }
+      else if(v==='back'){ B(cx-15,30,5,16,gear[0]); B(cx+10,30,5,16,gear[0]); }
+      else { B(cx+8,30,6,16,gear[0]); B(cx+2,33,20,4,'#1a1d18'); B(cx+20,34,8,3,'#2a2f26'); }
+      break; }
+    case 'butcher':{ const sk=['#b98b6a','#d6a884','#8a6448'], ap=['#9a948a','#c3bdb0','#6e675c'], bl='#6a1212', mask=['#6f6552','#857a62','#4e463a'];
+      sh(cx-10,48,9,14,'#2a241c','#3a3226','#160f0a'); sh(cx+1,48,9,14,'#2a241c','#3a3226','#160f0a');
+      sh(cx-15,26,30,24,sk[1],sk[0],sk[2]); sh(cx-11,32,22,22,ap[1],ap[0],ap[2]);
+      B(cx-9,40,6,8,bl); B(cx+3,46,5,6,bl); B(cx-2,36,4,5,bl);
+      sh(cx-19,25,8,12,sk[0],sk[1],sk[2]); sh(cx+11,25,8,12,sk[0],sk[1],sk[2]);
+      if(v==='back'){ sh(cx-5,15,10,11,mask[2],mask[0],'#3a342a'); }
+      else { sh(cx-5,15,10,11,mask[1],mask[0],mask[2]); B(cx-3,19,2,2,'#0a0a0a'); B(cx+1,19,2,2,'#0a0a0a'); B(cx-3,22,6,1,'#2a241c'); }
+      if(v==='front'){ B(cx-20,28,6,22,sk[0]); B(cx+14,28,6,22,sk[0]); B(cx+18,18,8,16,'#c8ccce'); B(cx+18,18,8,2,'#eef2f4'); B(cx+20,32,4,6,'#4a3620'); }
+      else if(v==='back'){ B(cx-20,28,6,22,sk[0]); B(cx+14,28,6,22,sk[0]); B(cx+18,18,8,16,'#9aa0a2'); }
+      else { B(cx+13,28,6,22,sk[0]); B(cx+20,16,9,18,'#c8ccce'); B(cx+20,16,9,2,'#eef2f4'); }
+      break; }
+  }
+  if(flash){ const id=c.getImageData(0,0,S,S),d=id.data; for(let i=0;i<d.length;i+=4){ if(d[i+3]>8){ d[i]=255;d[i+1]=215;d[i+2]=215; } } c.putImageData(id,0,0); }
   if(typeof outlinePass==='function') outlinePass(c,S);
-  _opCache[key]=cv2; return cv2;
+  if(mir){ const o=document.createElement('canvas');o.width=S;o.height=S;const oc=o.getContext('2d');oc.translate(S,0);oc.scale(-1,1);oc.drawImage(cv,0,0);_opCache[key]=o;return o; }
+  _opCache[key]=cv; return cv;
 }
 
 window.__MP=MP; window.__ARENAS=ARENAS; window.__loadArena=(i)=>MP.loadArena(i);
@@ -4166,16 +4302,18 @@ _sn('sSens').oninput=e=>{ SETTINGS.sens=(+e.target.value)*0.00025; _sn('vSens').
 _sn('sMusic').oninput=e=>{ SETTINGS.music=(+e.target.value)/100; _sn('vMusic').textContent=e.target.value+'%'; applySettings(); };
 _sn('sSfx').oninput=e=>{ SETTINGS.sfx=(+e.target.value)/100; _sn('vSfx').textContent=e.target.value+'%'; applySettings(); };
 _sn('sQual').oninput=e=>{ SETTINGS.quality=(+e.target.value)/100; _sn('vQual').textContent={ '50':'Low','75':'Medium','100':'High' }[e.target.value]; applySettings(); };
-let _mpMode='dm', _mpArena=0;
+let _mpMode='dm', _mpArena=0, _mpSkin='operator';
 function _openSetup(mode){ _mpMode=mode;
   document.getElementById('mpsetup_mode').textContent={dm:'DEATHMATCH',tdm:'TEAM DEATHMATCH',ctf:'CAPTURE THE FLAG',zombies:'ZOMBIES (CO-OP)'}[mode]||mode.toUpperCase();
+  const sw=document.getElementById('mpskins'); if(sw){ sw.innerHTML=SKINS.map(k=>'<button class="mpmode skinbtn" data-skin="'+k+'" style="width:auto;padding:5px 9px;font-size:11px;opacity:'+(k===_mpSkin?1:0.55)+'">'+SKIN_NAMES[k]+'</button>').join('');
+    [...sw.children].forEach(btn=>btn.onclick=()=>{ _mpSkin=btn.dataset.skin; [...sw.children].forEach(c=>c.style.opacity='0.55'); btn.style.opacity='1'; }); }
   const wrap=document.getElementById('mparenas'); wrap.innerHTML='<div style="color:#888;font-size:12px;line-height:1.5">Maps are chosen by <b style="color:#c33">vote in the lobby</b> — COD-style. Find a match, ready up, vote your map.</div>';
   document.getElementById('mpstatus2').textContent=(typeof firebase==='undefined'||!FIREBASE_CONFIG.databaseURL)?'No server configured — you\'ll get a solo lobby you can still play.':'';
   _show('mpsetup');
 }
 document.querySelectorAll('.mpmode').forEach(b=>{ if(b.dataset.mode) b.onclick=()=>_openSetup(b.dataset.mode); });
 document.getElementById('mpsetupback').onclick=()=>_show('mplobby');
-document.getElementById('mpjoin').onclick=()=>{ const nm=(document.getElementById('mpname').value||'FALCON'); MP.start(_mpMode,nm); };
+document.getElementById('mpjoin').onclick=()=>{ const nm=(document.getElementById('mpname').value||'FALCON'); MP.start(_mpMode,nm,_mpSkin); };
 
 // ---- end-of-floor card: seeds the first quiet hint of the truth ----
 function showEndCard(hasNext){
