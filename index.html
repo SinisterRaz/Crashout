@@ -3756,12 +3756,8 @@ let _hidden=false, _looping=false;   // keep MP alive while the window is unfocu
 let _ft=0,_fc=0,_qCheck=0,_qHold=0;   // adaptive-quality FPS monitor (hysteresis + cooldown)
 function loop(now){ if(_hidden){ _looping=false; return; }   // unfocused: worker drives the sim instead
   const dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;step(dt);render();
-  if(running){ _ft+=dt; _fc++;
-    if(T-_qCheck>1.2){ const fps=_fc/Math.max(0.001,_ft); _ft=0; _fc=0; _qCheck=T;
-      if(T>_qHold){                                   // wide dead-zone + cooldown so map size can't thrash
-        if(fps<32 && QUALITY>0.5){ setQuality(Math.max(0.5,Math.round((QUALITY-0.25)*100)/100)); _qHold=T+8; }
-        else if(fps>58 && QUALITY<SETTINGS.quality){ setQuality(Math.min(SETTINGS.quality,Math.round((QUALITY+0.25)*100)/100)); _qHold=T+8; } } }
-  } else { _qCheck=T; }
+  // NOTE: runtime auto-quality is OFF — it resized the render buffer mid-game, which read as
+  // the view 'perspective' and minimap size randomly changing. Resolution follows Settings only.
   requestAnimationFrame(loop);}
 // menu music starts on the first user interaction with the title (autoplay rule)
 function armMenuMusic(){ startMenuMusic(); window.removeEventListener('pointerdown',armMenuMusic); window.removeEventListener('keydown',armMenuMusic); }
@@ -4127,9 +4123,12 @@ const MP = {
     this.status('Finding a lobby…');
     this._joinT=setTimeout(()=>{ if(!this.active) this._joinFail('No response from the database. Make sure Realtime Database exists and the rules are published. Dropped you into a solo lobby.'); }, 9000);
     let roomsRef; try{ roomsRef=this.db.ref('rooms'); }catch(e){ return this._joinFail('DB error: '+e.message); }
-    roomsRef.orderByChild('tag').equalTo('lobby').limitToLast(10).once('value').then(snap=>{
-      let target=null; snap.forEach(ch=>{ const r=ch.val()||{}; const np=r.players?Object.keys(r.players).length:0;
-        const lst=r.lobby?r.lobby.state:'lobby'; if(np<8 && lst!=='ended') target=ch.key; });
+    roomsRef.orderByChild('tag').equalTo('lobby').limitToLast(20).once('value').then(snap=>{
+      // join a REAL active lobby (>=1 player) — skip empty ghost rooms; prefer the NEWEST (the one just created)
+      let target=null, bestT=-1;
+      snap.forEach(ch=>{ const r=ch.val()||{}; const np=r.players?Object.keys(r.players).length:0;
+        const lst=r.lobby?r.lobby.state:'lobby'; const ct=r.created||0;
+        if(np>=1 && np<8 && lst!=='ended' && ct>bestT){ bestT=ct; target=ch.key; } });
       if(!target){ clearTimeout(this._joinT); this.status('No open lobbies — hit CREATE LOBBY to start one.'); _show('mpsetup'); return; }
       this.roomId=target; this.roomRef=this.db.ref('rooms/'+target);
       this.afterJoin();
