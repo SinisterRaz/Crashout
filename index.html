@@ -167,19 +167,21 @@
     <h1>JOHN FALCON</h1>
     <div style="color:#c33;letter-spacing:8px;font-size:13px;margin:-2px 0 6px">C R A S H O U T</div>
     <h2>BLACKHILLS ASYLUM</h2>
+    <div style="margin:10px 0 12px;border:1px solid #633;border-radius:5px;padding:10px 12px;background:#160e0e">
+      <div style="color:#fd6;letter-spacing:4px;font-size:12px;margin-bottom:8px">▶ SELECT FLOOR — PLAY ANY LEVEL</div>
+      <button class="lvlsel" data-lvl="0">FLOOR 1 — ASYLUM</button>
+      <button class="lvlsel" data-lvl="1">FLOOR 2 — MEDICAL</button>
+      <button class="lvlsel" data-lvl="2">FLOOR 3 — THE DEPTHS</button>
+      <button class="lvlsel" data-lvl="3">FLOOR 4 — CONTAINMENT</button>
+      <button class="lvlsel" data-lvl="4">FLOOR 5 — THE SUMP</button>
+    </div>
     <p class="story">Cell 9, Blackhills Asylum. They say John Falcon lost his mind.</p>
     <p class="story">They're wrong. I don't belong in here — and I'm walking out.</p>
     <p class="story dim">The red light's still on. Somewhere a tape's still running...</p>
     <p class="story dim">Then the power died. And every locked door in this place opened at once.</p>
     <p class="ctl">WASD move · mouse / Q-E turn · click or SPACE = shoot</p>
     <p class="ctl">Find both keys. Get to the exit. Get out.</p>
-    <button id="go">BREAK OUT</button>
-    <div style="margin-top:14px;border-top:1px solid #333;padding-top:10px">
-      <div style="color:#888;letter-spacing:3px;font-size:11px;margin-bottom:6px">TEST / LEVEL SELECT</div>
-      <button class="lvlsel" data-lvl="0">FLOOR 1 — ASYLUM</button>
-      <button class="lvlsel" data-lvl="1">FLOOR 2 — MEDICAL</button>
-      <button class="lvlsel" data-lvl="2">FLOOR 3 — THE DEPTHS</button>
-    </div>
+    <button id="go">BREAK OUT  (start from Floor 1)</button>
   </div>
 </div>
 
@@ -373,6 +375,8 @@ function loadLevel(i){
   PICKUPS=(L.pickups?L.pickups():[]);
   enemies=(L.enemies?L.enemies():[]);
   HAZARDS=(L.hazards?L.hazards():[]);
+  for(const lt of LIGHTS) lt._vis=computeVis(lt.x,lt.y,lt.r);
+  for(const h of HAZARDS) h._vis=computeVis(h.x,h.y,(h.r||1)+2.5);
   FOGCOL=L.fog||[10,13,11];
   DARKNESS=L.darkness||0;
   DECALS=L.decals?L.decals():{};
@@ -601,6 +605,22 @@ function makeTex(kind){const S=64,data=new Uint8ClampedArray(S*S*3);
         if(y%8<1||x%17<1){ r*=0.5; g*=0.4; b*=0.3; } }
       if(R()<0.05){ r*=0.7; g*=0.7; b*=0.7; }
     }
+    else if(kind==='fleshvein'){                      // cold steel wall with organic red veins creeping through (Floor 4)
+      const base=58+(R()*16-8); r=base*0.9; g=base*0.96; b=base*1.0;
+      const v=Math.sin(x*0.35+Math.sin(y*0.22)*2.3)+Math.sin(y*0.4+x*0.15);
+      if(v>1.35){ r=92+R()*42; g=18+R()*14; b=26+R()*14; }
+      else if(v>1.02){ r=60+R()*22; g=22+R()*10; b=28+R()*10; }
+      if(R()<0.03){ r=134; g=42; b=52; }
+      if(R()<0.05){ r*=0.6; g*=0.6; b*=0.6; }
+    }
+    else if(kind==='rustmetal'){
+      const px=x%16,py=y%16,seam=(px<1||py<1);
+      let base=seam?38:78+(R()*20-10); r=base*0.9; g=base*0.82; b=base*0.78;
+      const rs=Math.sin(x*0.3+Math.sin(y*0.2)*2)+Math.sin(y*0.25);
+      if(rs>1.1){ r=104+R()*40; g=52+R()*20; b=30+R()*14; }
+      else if(rs>0.6){ r=84+R()*20; g=50+R()*12; b=34+R()*10; }
+      if(R()<0.04){ r*=0.55; g*=0.55; b*=0.6; }
+    }
     else{const base=90+(R()*24-12);r=g=b=base;}
     put(x,y,r,g,b);}
   return {w:S,h:S,data};}
@@ -647,6 +667,16 @@ const ETYPES={
   // RABID: baseline humanoid, the reference all others deviate from.
   basic:  {hp:34, mass:0.4, chase:2.6, sightRange:10, dmg:13, sz:1.0, tint:null, shape:'human',
     dmgMult:{bullet:1,pellet:1,melee:1.1,explosive:1.4,fire:1}},
+  // BREACHER (Floor 4): charges out of blind cell doorways. Aggressive, mid-HP.
+  breacher:{hp:40, mass:0.5, chase:3.3, sightRange:11, dmg:17, sz:1.0, tint:[120,135,95], shape:'human',
+    dmgMult:{bullet:1,pellet:1.05,melee:1.1,explosive:1.4,fire:1.2}, earshot:13, relentless:true},
+  drowned:{hp:62, mass:0.85, chase:1.25, sightRange:9, dmg:21, sz:1.1, tint:[70,110,120], shape:'lumpy',
+    dmgMult:{bullet:0.8,pellet:0.95,melee:0.9,explosive:1.5,fire:1.6}, earshot:12, relentless:true},
+  leviathan:{hp:420, mass:1.0, chase:1.15, sightRange:14, dmg:34, sz:1.65, tint:[48,88,110], shape:'lumpy',
+    dmgMult:{bullet:0.6,pellet:0.85,melee:0.7,explosive:1.6,fire:1.3}, boss:true},
+  // SUBJECT ZERO (Floor 4 boss): the thing Containment failed to hold. Fast for its size, tanky.
+  subzero:{hp:300, mass:0.95, chase:2.2, sightRange:13, dmg:28, sz:1.5, tint:[150,160,110], shape:'human',
+    dmgMult:{bullet:0.7,pellet:0.9,melee:0.8,explosive:1.5,fire:1.4}, boss:true},
   // LUNATIC: thin triangle, very fast, fragile. Glass-cannon panic charger.
   fast:   {hp:12, mass:0.2, chase:4.8, sightRange:13, dmg:8, sz:0.9, tint:[150,60,60], shape:'thin',
     dmgMult:{bullet:1.3,pellet:1.15,melee:1.25,explosive:1.3,fire:1}},
@@ -1153,6 +1183,261 @@ LEVELS[2]={
             7:makeTex('hazard'),8:makeTex('wetconc'),9:makeTex('steelVein'),10:makeTex('concBlood')}),
 };
 
+const L4_MAP=[
+"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.........BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.........BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.........BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB..S......BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.........BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.....B...BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBB.........BBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBB.BBBBBBBBBB......B......BBBBBBB",
+"####......#.....####......#......#######",
+"####.....#......#......#.....#...#######",
+"####...#..........##......#......#######",
+"####......#.....####......#......#######",
+"####...K...#....####...#....#....#######",
+"####......#.....####......##...#########",
+"####...#.....#..##########.......#######",
+"####......#.....##########.......#######",
+"####.....#......##########....#..#######",
+"##########################...#...#######",
+"##########################..#....#######",
+"##########################.......#######",
+"#############################.##########",
+"#############################.##########",
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTT.TTTTTTTTTT",
+"TTTTTTTT.....T.....TTT.........TTTTTTTTT",
+"TTTTTTTT.....T.....TTT.......T.TTTTTTTTT",
+"TTTTTTTT.....T.....T....TK.....TTTTTTTTT",
+"TTTTTTTT...T...T...TTT...T..T..TTTTTTTTT",
+"TTTTTTTT.....T.....TTT.........TTTTTTTTT",
+"TTTTTTTTTTT.TTT.TT.TTTTT..TT..T.....TTTT",
+"TTTTTTTT.....T.....TTT.......T......TTTT",
+"TTTTTTTT...T......T......T........E.TTTT",
+"TTTTTTTT.....T.....TTT.......T......TTTT",
+"TTTTTTTT.....T.....TTT.......T......TTTT",
+"TTTTTTTT.....T.....TTT.........TTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"];
+
+const L4_PROPS=[
+  {x:5,y:4,kind:'deskmic'},
+  {x:10,y:8,kind:'files'},
+  {x:6,y:20,kind:'files'},
+  {x:10,y:22,kind:'straitjacket'},
+  {x:13,y:18,kind:'gore'},
+  {x:5,y:18,kind:'body'},
+  {x:23,y:16,kind:'ivstand'},
+  {x:31,y:26,kind:'gore'},
+  {x:27,y:22,kind:'debris'},
+  {x:30,y:20,kind:'body'},
+  {x:11,y:33,kind:'gore'},
+  {x:16,y:40,kind:'body'},
+  {x:26,y:33,kind:'hangingbody',face:0},
+  {x:28,y:40,kind:'gore'},
+  {x:24,y:40,kind:'chairbody',face:0},
+  {x:27,y:35,kind:'wallbody'},
+];
+
+const L4_LIGHTS=[
+  {x:6,y:6,r:5,i:0.50},
+  {x:9,y:13,r:4,i:0.40,flicker:true},
+  {x:8,y:20,r:5,i:0.45,flicker:true},
+  {x:12,y:22,r:4,i:0.40,flicker:true},
+  {x:26,y:18,r:6,i:0.60},
+  {x:29,y:24,r:4,i:0.50},
+  {x:12,y:36,r:6,i:0.80},
+  {x:26,y:36,r:6,i:0.80},
+  {x:34,y:38,r:4,i:0.95},
+];
+
+const L4_PICKUPS=[
+  {x:6,y:8,kind:'ammo',sub:'pistol',amt:20},
+  {x:23,y:19,kind:'weapon',sub:'uzi'},
+  {x:24,y:20,kind:'ammo',sub:'smg',amt:60},
+  {x:12,y:40,kind:'health',amt:30},
+  {x:27,y:33,kind:'health',amt:35},
+  {x:29,y:38,kind:'ammo',sub:'shells',amt:12},
+];
+
+function L4_ENEMIES(){ return [
+  // B CELL BLOCK — teach + test the Breacher
+  makeEnemy(10,22,'breacher'),
+  makeEnemy(6,23,'basic'),
+  makeEnemy(13,17,'breacher'),
+  // C CONTAINMENT — twist (breacher + flanking fast)
+  makeEnemy(23,18,'basic'),
+  makeEnemy(30,25,'breacher'),
+  makeEnemy(28,16,'fast'),
+  // BLOCK-C ATRIUM (west) — set-piece
+  makeEnemy(11,35,'breacher'),
+  makeEnemy(15,39,'basic'),
+  makeEnemy(12,33,'fast'),
+  // BLOCK-C ATRIUM (east) — set-piece
+  makeEnemy(26,35,'breacher'),
+  makeEnemy(28,39,'basic'),
+  makeEnemy(24,32,'fast'),
+  // BLOCK-C ATRIUM — BOSS (gates the exit)
+  makeEnemy(28,37,'subzero'),
+  makeEnemy(27,40,'basic'),
+]; }
+
+LEVELS[3]={
+  name:'FLOOR 4 — CONTAINMENT',
+  objective:'FIND BOTH KEYCARDS',
+  map:L4_MAP, props:L4_PROPS, lights:L4_LIGHTS,
+  pickups:()=>L4_PICKUPS.slice(), enemies:L4_ENEMIES,
+  fog:[11,16,13], darkness:0.32,
+  wallblood:['16,11,1','22,11,0','31,9,1','38,5,1','44,22,0','40,22,1','19,19,0'],
+  decals:()=>({
+    '16,6,1':'sign_quarantine','13,12,0':'sign_biohazard','27,8,1':'sign_no','36,11,0':'sign_quarantine',
+    '30,9,1':'scorchmark','40,5,1':'hole','44,23,0':'scorchmark','38,22,1':'bulletholes',
+    '22,6,1':'graf_help','14,20,0':'graf_scrawl','40,23,1':'graf_die','45,6,0':'graf_faces','31,18,1':'graf_help',
+  }),
+  tex:()=>({1:makeTex('steel'),4:makeTex('fleshvein'),5:makeTex('ceramic'),6:makeTex('breached')}),
+};
+
+const L5_MAP=[
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTT..........TTTTTTTTTTTTTTTTTTTTTTTTTTT",
+"TTTTT........T...........T.........TTTTTTT",
+"TTTTT..........TTTTTTTTT...........TTTTTTT",
+"TTTTT..S.......TTTTTTTTT..T.....T..TTTTTTT",
+"TTTTT..........TTTTTTTTT.....K.....TTTTTTT",
+"TTTTT..........TTTTTTTTT......T....TTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT...........TTTTTTT",
+"TTTTTTTTTTTTTTTTTTTTTTTT....T......TTTTTTT",
+"TTTTTTTTTTTTTTTTTTTT.......T.......TTTTTTT",
+"TTTTTTTTTTTTTTTTTTTT.TTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTT.TTTTTTTTTTTTTTTTTTTTT",
+"TTTTTTTTTTTTTTTTTTTT.TTTTTTTTTTTTTTTTTTTTT",
+"####################.#####################",
+"######.......#.......#####################",
+"######.....#.....#########################",
+"######...........#####.........###########",
+"######.........#.......#.......###########",
+"######..#........#####...#.....###########",
+"######.........#.#####.........###########",
+"######......#...######......#..###########",
+"############.#...#####....#....###########",
+"############.....#####.........###########",
+"############..#..#########.###############",
+"############.....#########.###############",
+"############.....#########.###############",
+"############.....#########.###############",
+"##########################.###############",
+"##########################.###############",
+"BBBBBBBBBBBBBBBBBBBBBBBBBB.BBBBBBBBBBBBBBB",
+"BBBBBBBB......B.....B......B.....BBBBBBBBB",
+"BBBBBBBB.........B........B......BBBBBBBBB",
+"BBBBBBBB......B.....B......B.....BBBBBBBBB",
+"BBBBBBBB.....B....B....B....B....BBBBBBBBB",
+"BBBBBBBB.......B.......B.......B......BBBB",
+"BBBBBBBB.......B....B....B......B.....BBBB",
+"BBBBBBBBBBBBB...B..B.BB.B....BB....E..BBBB",
+"BBBBBBBB.......B.......B.......B......BBBB",
+"BBBBBBBB.....B....B....B....B.........BBBB",
+"BBBBBBBB....K..B.......B.......B......BBBB",
+"BBBBBBBB......B.....B......B.....BBBBBBBBB",
+"BBBBBBBB......B.....B......B.....BBBBBBBBB",
+"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"];
+
+const L5_PROPS=[
+  {x:8,y:4,kind:'deskmic'},
+  {x:12,y:7,kind:'files'},
+  {x:26,y:5,kind:'ivstand'},
+  {x:31,y:10,kind:'debris'},
+  {x:28,y:8,kind:'body'},
+  {x:9,y:18,kind:'gore'},
+  {x:14,y:26,kind:'body'},
+  {x:11,y:21,kind:'straitjacket'},
+  {x:8,y:19,kind:'debris'},
+  {x:25,y:22,kind:'gore'},
+  {x:28,y:20,kind:'body'},
+  {x:16,y:36,kind:'hangingbody',face:0},
+  {x:29,y:39,kind:'gore'},
+  {x:13,y:41,kind:'body'},
+  {x:24,y:34,kind:'gore'},
+  {x:21,y:40,kind:'chairbody',face:0},
+  {x:30,y:37,kind:'wallbody'},
+];
+
+const L5_LIGHTS=[
+  {x:7,y:6,r:5,i:0.50},
+  {x:13,y:6,r:4,i:0.40,flicker:true},
+  {x:28,y:7,r:5,i:0.50},
+  {x:10,y:20,r:4,i:0.35,flicker:true},
+  {x:14,y:24,r:3,i:0.30,flicker:true},
+  {x:26,y:21,r:4,i:0.40},
+  {x:14,y:37,r:5,i:0.55,flicker:true},
+  {x:27,y:38,r:5,i:0.55,flicker:true},
+  {x:20,y:38,r:7,i:0.60},
+  {x:35,y:38,r:4,i:0.90},
+];
+
+const L5_PICKUPS=[
+  {x:9,y:5,kind:'ammo',sub:'pistol',amt:16},
+  {x:14,y:24,kind:'weapon',sub:'rifle'},
+  {x:13,y:24,kind:'ammo',sub:'rifle',amt:20},
+  {x:26,y:22,kind:'health',amt:30},
+  {x:18,y:38,kind:'health',amt:35},
+  {x:24,y:40,kind:'ammo',sub:'shells',amt:12},
+  {x:16,y:41,kind:'ammo',sub:'rifle',amt:16},
+];
+
+const L5_HAZARDS=[
+  {x:11,y:22,r:1.1,dps:13,fuel:'chem'},
+  {x:24,y:37,r:1.2,dps:14,fuel:'chem'},
+  {x:29,y:36,r:1.0,dps:13,fuel:'chem'},
+];
+
+function L5_ENEMIES(){ return [
+  // C DARK GAUNTLET — teach/test the Drowned
+  makeEnemy(10,19,'drowned'),
+  makeEnemy(14,24,'drowned'),
+  makeEnemy(9,17,'drowned'),
+  // D JUNCTION — twist
+  makeEnemy(25,21,'drowned'),
+  makeEnemy(28,19,'fast'),
+  makeEnemy(23,22,'drowned'),
+  // B PUMP HALL
+  makeEnemy(26,5,'drowned'),
+  makeEnemy(31,9,'basic'),
+  // E RESERVOIR — miniboss + support
+  makeEnemy(14,37,'drowned'),
+  makeEnemy(27,38,'drowned'),
+  makeEnemy(20,41,'fast'),
+  makeEnemy(30,34,'basic'),
+  makeEnemy(20,36,'leviathan'),
+]; }
+
+LEVELS[4]={
+  name:'FLOOR 5 — THE SUMP',
+  objective:'FIND BOTH KEYCARDS',
+  map:L5_MAP, props:L5_PROPS, lights:L5_LIGHTS,
+  pickups:()=>L5_PICKUPS.slice(), enemies:L5_ENEMIES, hazards:()=>L5_HAZARDS.slice(),
+  fog:[6,10,13], darkness:0.44,
+  wallblood:['10,18,1','14,26,0','25,22,1','16,37,1','29,39,0','20,41,1'],
+  decals:()=>({
+    '9,16,1':'sign_biohazard','27,5,0':'sign_quarantine','20,33,1':'sign_no','13,40,0':'sign_no',
+    '11,23,1':'scorchmark','24,38,0':'bulletholes','29,36,1':'hole',
+    '14,26,0':'graf_die','9,18,1':'graf_help','25,34,1':'graf_faces','16,41,0':'graf_scrawl',
+  }),
+  tex:()=>({1:makeTex('wetconc'),4:makeTex('rustmetal'),5:makeTex('pooltile'),6:makeTex('breached')}),
+};
+
 
 const RABID={ sightRange:10, wakeTelegraph:0.35, chaseSpeed:2.7, searchSpeed:1.5,
   attackRange:0.9, attackWind:0.3, attackDmg:14, attackCooldown:0.8, giveUp:6 };
@@ -1273,7 +1558,7 @@ let T=0;
    // shared so enemy shading fogs to the same colour as the world
 
 function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
-  if(d2>lt.r*lt.r)continue;const fall=1-Math.sqrt(d2)/lt.r;
+  if(d2>lt.r*lt.r)continue; if(lt._vis&&!lt._vis.has((wx|0)+','+(wy|0)))continue; const fall=1-Math.sqrt(d2)/lt.r;
   let fl;
     if(lt.flicker){ // failing fluorescent: mostly ON but stutters to dark
       const n=Math.sin(T*23+lt.x*7.7)*Math.sin(T*9.3+lt.y*3.1);
@@ -1283,7 +1568,7 @@ function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-l
     L+=fall*fall*lt.i*fl;}
   // fire hazards glow, and they flicker harder than lamps
   for(const h of HAZARDS){const dx=wx-h.x,dy=wy-h.y,d2=dx*dx+dy*dy,rr=(h.r+2.5);
-    if(d2>rr*rr)continue;const fall=1-Math.sqrt(d2)/rr;
+    if(d2>rr*rr)continue; if(h._vis&&!h._vis.has((wx|0)+','+(wy|0)))continue; const fall=1-Math.sqrt(d2)/rr;
     const fk=.7+.3*Math.sin((h.phase||0)*1.7);L+=fall*fall*1.1*fk;}
   // muzzle flash briefly lights the world around the player (lit by gunshots)
   if(muzzle>0.01){ const dx=wx-P.x,dy=wy-P.y,d=Math.sqrt(dx*dx+dy*dy);
@@ -1295,10 +1580,10 @@ function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-l
 function lightColorAt(wx,wy){
   let wr=0,wg=0,wb=0,wsum=0;
   for(const lt of LIGHTS){ if(!lt.col)continue; const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
-    if(d2>lt.r*lt.r)continue; const w=(1-Math.sqrt(d2)/lt.r)*lt.i;
+    if(d2>lt.r*lt.r)continue; if(lt._vis&&!lt._vis.has((wx|0)+','+(wy|0)))continue; const w=(1-Math.sqrt(d2)/lt.r)*lt.i;
     wr+=lt.col[0]*w; wg+=lt.col[1]*w; wb+=lt.col[2]*w; wsum+=w; }
   for(const h of HAZARDS){ const dx=wx-h.x,dy=wy-h.y,d2=dx*dx+dy*dy,rr=(h.r+2.5);
-    if(d2>rr*rr)continue; const w=(1-Math.sqrt(d2)/rr)*1.1;
+    if(d2>rr*rr)continue; if(h._vis&&!h._vis.has((wx|0)+','+(wy|0)))continue; const w=(1-Math.sqrt(d2)/rr)*1.1;
     const c = h.fuel==='chem' ? [0.5,1.0,0.35] : [1.0,0.55,0.2];
     wr+=c[0]*w; wg+=c[1]*w; wb+=c[2]*w; wsum+=w; }
   if(muzzle>0.01){ const dx=wx-P.x,dy=wy-P.y,d=Math.sqrt(dx*dx+dy*dy);
@@ -1313,10 +1598,43 @@ function solid(x,y){const c=(x>=0&&y>=0&&x<MW&&y<MH)?grid[y|0][x|0]:1;return c>=
 // line of sight between two points (DDA, stops at wall)
 function los(ax,ay,bx,by){const dx=bx-ax,dy=by-ay,d=Math.hypot(dx,dy),steps=(d/0.1)|0;
   for(let i=1;i<steps;i++){const t=i/steps;if(solid(ax+dx*t,ay+dy*t))return false;}return true;}
+// LIGHT OCCLUSION: precompute the cells a source (light/hazard) actually illuminates,
+// so light no longer bleeds through walls. A floor cell is lit if its centre has LOS to
+// the source; a wall cell is lit if it borders a lit floor cell (its visible face).
+function computeVis(sx,sy,r){
+  const vis=new Set(), R=Math.ceil(r)+1;
+  const x0=Math.max(0,(sx-R)|0), x1=Math.min(MW-1,(sx+R)|0), y0=Math.max(0,(sy-R)|0), y1=Math.min(MH-1,(sy+R)|0);
+  for(let cy=y0;cy<=y1;cy++)for(let cx=x0;cx<=x1;cx++){
+    if(grid[cy][cx]>=1)continue;                       // floor cells only here
+    const ccx=cx+0.5,ccy=cy+0.5, dx=ccx-sx,dy=ccy-sy;
+    if(dx*dx+dy*dy>(r+0.8)*(r+0.8))continue;
+    if(los(sx,sy,ccx,ccy)) vis.add(cx+','+cy);
+  }
+  // add wall faces bordering a lit floor cell (so walls aren't blacked out)
+  const walls=[];
+  for(const k of vis){ const [cx,cy]=k.split(',').map(Number);
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=cx+dx,ny=cy+dy;
+      if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&grid[ny][nx]>=1) walls.push(nx+','+ny); } }
+  for(const w of walls) vis.add(w);
+  return vis;
+}
 
+// ══ ATMOSPHERE (researched horror grade — all tunable) ═════════════════════
+// Principles (Frictional/Amnesia, Silent Hill, horror-lighting consensus):
+//  • darkness, NOT blackness — carry a faint light bubble so the near field reads
+//  • short fog that swallows distance into near-black — threats emerge from it
+//  • permanent vignette = claustrophobia; cool desaturated grade = dread
+const ATMO={
+  torch:0.40, torchR:4.6,   // the faint light you always carry (radius in tiles)
+  dark:0.16,                // extra global ambient floor subtracted everywhere
+  fogStart:2, fogEnd:9,     // fog pulled IN (was 11) so distance vanishes sooner
+  vig:0.52,                 // permanent corner darkening
+  desat:0.30,               // pull color toward grey (0..1)
+  tint:'#0a1512', tintA:0.16// cool, sickly multiply tint
+};
 // ---- world render (walls + floor/ceiling + fog + light) ----
 function render(){
-  const FOG=FOGCOL,fogStart=2,fogEnd=11,ceil=[16,18,20],floor=[26,22,18];
+  const FOG=FOGCOL,fogStart=ATMO.fogStart,fogEnd=ATMO.fogEnd,ceil=[16,18,20],floor=[26,22,18];
   const halfH=H/2, caL=P.a-FOV/2,caR=P.a+FOV/2;
   const clx=Math.cos(caL),cly=Math.sin(caL),crx=Math.cos(caR),cry=Math.sin(caR);
   for(let y=(halfH+1)|0;y<H;y++){const p=y-halfH,rowDist=(0.5*H)/p;
@@ -1387,6 +1705,7 @@ function render(){
   drawEnemies();
   if(typeof MP!=='undefined'&&MP.active) MP.draw();
   drawProps();
+  drawExitDoor();
   drawPickups();
   drawKeys();
   drawParticles();
@@ -1461,9 +1780,10 @@ function drawScreenFX(){
 }
 
 // ---- health-driven screen effects (RULE H2) ----
-// boss health bar — shows when the boss is awake, so the fight has a clear goal
+const BOSS_NAMES={ boss:'THE ORDERLY PRIME', vatborn:'THE VAT-BORN', subzero:'SUBJECT ZERO', leviathan:'THE LEVIATHAN' };
+// boss health bar — shows when any floor boss is awake, so the fight has a clear goal
 function drawBossBar(){
-  const boss=enemies.find(e=>e.type==='boss'&&e.state!=='dead'&&e.state!=='dormant');
+  const boss=enemies.find(e=>e.boss&&e.state!=='dead'&&e.state!=='dormant');
   if(!boss) return;
   const bw=W*0.6, bh=8, bx=(W-bw)/2, by=H-26;
   ctx.save();
@@ -1473,7 +1793,7 @@ function drawBossBar(){
   ctx.fillStyle='#c22'; ctx.fillRect(bx,by,bw*frac,bh);
   ctx.strokeStyle='#e55'; ctx.lineWidth=1; ctx.strokeRect(bx,by,bw,bh);
   ctx.fillStyle='#fbb'; ctx.font='bold 9px monospace'; ctx.textAlign='center';
-  ctx.fillText('THE ORDERLY PRIME', W/2, by+bh+9); ctx.textAlign='left';
+  ctx.fillText(BOSS_NAMES[boss.type]||'ABOMINATION', W/2, by+bh+9); ctx.textAlign='left';
   ctx.restore();
 }
 function drawDamageVignette(){
@@ -1640,7 +1960,7 @@ const MAT={ gun:[VM.gun,VM.gunD,VM.gunL], poly:[VM.poly,VM.polyD,VM.polyL], wood
 // the barrel recedes AWAY toward the enemy, narrowing to a tiny muzzle at the horizon.
 // You never see the bore end-on. Muzzle flash projects forward into the distance.
 const GUNS2={
-  pistol:{ off:4, nearW:50,recTopW:30,barrelW:18,farW:8, mid:0.46, far:0.72, body:'gun',  barrel:'gun', two:false, flash:22, sight:true },
+  pistol:{ off:0, nearW:50,recTopW:30,barrelW:18,farW:8, mid:0.46, far:0.66, body:'gun',  barrel:'gun', two:false, flash:22, sight:true },  // 'far' = how far forward the barrel reaches (lower = reaches higher/further forward; purely visual)
   shotgun:{off:0, nearW:74,recTopW:46,barrelW:24,farW:12, mid:0.44, far:0.66, body:'wood', barrel:'gun', two:true,  flash:34, pump:true },
   uzi:{    off:0, nearW:50,recTopW:34,barrelW:15,farW:8,  mid:0.48, far:0.70, body:'poly', barrel:'gun', two:true,  flash:24 },
   rifle:{  off:0, nearW:60,recTopW:34,barrelW:14,farW:7,  mid:0.42, far:0.64, body:'wood', barrel:'gun', two:true,  flash:28, scope:true },
@@ -1979,8 +2299,186 @@ function drawBoss(e){
   if(mir){ const o=document.createElement('canvas');o.width=S;o.height=S;const oc=o.getContext('2d');oc.translate(S,0);oc.scale(-1,1);oc.drawImage(cv,0,0);return o; }
   return cv;
 }
+// ===== APPROVED BESPOKE BOSS ART — 4-directional (front / back / side) =====
+// view: 'front' (approved) | 'back' (no face, facing away) | 'side' (profile).
+// The renderer draws 'side' for right and mirrors it for left.
+const BOSS_ART={
+ boss:{pal:{coat:'#b8b2a4',coatS:'#6f6a5f',coatH:'#e4ddcf',flesh:'#9aa0a2',dark:'#07060a',blood:'#8a1420',steel:'#3b424c',hair:'#4b4742'},
+  draw(c,t,tele,view){const S=_BOSS_S,cx=S/2,P=this.pal,sway=Math.sin(t*2)*2,lunge=tele*10;
+   _bpx(c,cx-14,78,10,16,P.coatS);_bpx(c,cx+4,78,10,16,P.coatS);                 // legs (all views)
+   if(view==='side'){
+    _bpx(c,cx-14,34+sway,30,46,P.coat); _bpx(c,cx-14,34+sway,7,46,P.coatS);      // coat profile
+    _bpx(c,cx+2,34+sway,8,30-lunge*0.2,P.coat); _bpx(c,cx+6,62,8,8,P.flesh);      // forward arm+fist
+    _bpx(c,cx-10,54+sway,14,18,'#5a0e16');                                        // apron edge
+    _bpx(c,cx-6,16+sway,16,20,P.flesh); _bpx(c,cx-6,16+sway,5,20,P.hair);         // head profile + hair back
+    _bpx(c,cx+6,22+sway,4,3,tele>0.4?'#ff5a4a':P.dark);                           // one eye
+    _bpx(c,cx+2,30+sway,8,5,'#d8d2c6');                                           // mask under chin
+    return;
+   }
+   if(view==='back'){
+    _bpx(c,cx-20,34+sway,40,46,P.coat); _bpx(c,cx-20,34+sway,8,46,P.coatS); _bpx(c,cx+12,34+sway,8,46,P.coatH);
+    _bpx(c,cx-1,36+sway,2,42,P.coatS);                                           // coat seam
+    _bpx(c,cx-26,40+sway,8,30,P.coat);_bpx(c,cx+18,40+sway,8,30,P.coat);          // arms
+    _bpx(c,cx-28,66,8,8,P.flesh);_bpx(c,cx+20,66,8,8,P.flesh);
+    _bpx(c,cx-9,16+sway,18,20,P.hair);_bpx(c,cx-9,16+sway,18,4,P.dark);           // back of head (hair, no face)
+    return;
+   }
+   // FRONT (approved)
+   _bpx(c,cx-20,34+sway,40,46,P.coat);_bpx(c,cx-20,34+sway,8,46,P.coatS);_bpx(c,cx-3,34+sway,6,46,P.coatH);
+   for(let i=0;i<5;i++)_bpx(c,cx-1,40+i*8+sway,2,2,P.dark);
+   _bpx(c,cx-16,54+sway,32,20,'#5a0e16');_bpx(c,cx-10,58+sway,8,10,P.blood);
+   _bpx(c,cx-26-lunge*0.3,40+sway,8,30,P.coat);_bpx(c,cx+18+lunge*0.3,40+sway,8,30,P.coat);
+   _bpx(c,cx-28-lunge,66,8,8,P.flesh);_bpx(c,cx+20+lunge,66,8,8,P.flesh);
+   _bpx(c,cx-9,16+sway,18,20,P.flesh);_bpx(c,cx-9,16+sway,4,20,'#6f7577');
+   _bpx(c,cx-6,22+sway,4,3,P.dark);_bpx(c,cx+2,22+sway,4,3,P.dark);
+   if(tele>0.4){_bpx(c,cx-6,22+sway,4,3,'#ff5a4a');_bpx(c,cx+2,22+sway,4,3,'#ff5a4a');}
+   _bpx(c,cx-8,30+sway,16,6,'#d8d2c6');_bpx(c,cx-9,16+sway,18,2,P.dark);
+  }},
+ sister:{pal:{gown:'#d9dcd2',gownS:'#9aa093',gownH:'#f1f3ec',veil:'#b9c0b6',flesh:'#c7b8ad',fleshS:'#8a7466',dark:'#0a0807',blood:'#7a1420',tear:'#9fd6e8',eye:'#1a1412',hair:'#2a2622'},
+  draw(c,t,tele,view){const S=_BOSS_S,cx=S/2,P=this.pal,sway=Math.sin(t*2.1)*2,rush=tele*18;
+   if(view==='side'){
+    _bpx(c,cx-10,30+sway,22,54,P.gown);_bpx(c,cx-10,30+sway,6,54,P.gownS);
+    _bpx(c,cx-10,74+sway,22,10,'#5a0e16');
+    _bpx(c,cx+2,36+sway,6,30+rush*0.3,P.gown);_bpx(c,cx+4,62+sway,7,8,P.flesh);   // forward arm
+    _bpx(c,cx-8,14+sway,18,20,P.veil);_bpx(c,cx-4,18+sway,12,16,P.flesh);         // veil+face profile
+    _bpx(c,cx-8,14+sway,6,20,P.hair);                                             // veil back
+    _bpx(c,cx+3,24+sway,3,4,P.eye);_bpx(c,cx+4,28+sway,1,8,P.tear);
+    return;
+   }
+   if(view==='back'){
+    _bpx(c,cx-13,30+sway,26,54,P.gown);_bpx(c,cx-13,30+sway,6,54,P.gownS);_bpx(c,cx+7,30+sway,6,54,P.gownH);
+    _bpx(c,cx-13,74+sway,26,10,'#5a0e16');
+    _bpx(c,cx-18,36+sway,6,30,P.gown);_bpx(c,cx+12,36+sway,6,30,P.gown);
+    _bpx(c,cx-10,14+sway,20,20,P.veil);_bpx(c,cx-10,14+sway,20,4,P.gownH);         // veil back (no cross, no face)
+    _bpx(c,cx-6,20+sway,12,8,P.hair);                                             // hair under veil
+    return;
+   }
+   // FRONT (approved)
+   _bpx(c,cx-13,30+sway,26,54,P.gown);_bpx(c,cx-13,30+sway,6,54,P.gownS);_bpx(c,cx-1,30+sway,3,54,P.gownH);
+   _bpx(c,cx-13,74+sway,26,10,'#5a0e16');
+   for(let i=0;i<4;i++)_bpx(c,cx-8+i*5,50+sway,2,24,P.blood);
+   _bpx(c,cx-18-rush*0.2,36+sway,6,30+rush*0.3,P.gown);_bpx(c,cx+12+rush*0.2,36+sway,6,30+rush*0.3,P.gown);
+   _bpx(c,cx-20-rush,62+sway,7,8,P.flesh);_bpx(c,cx+14+rush,62+sway,7,8,P.flesh);
+   if(tele>0.3){for(let i=0;i<3;i++){_bpx(c,cx-20-rush+i*2,70+sway,1,6,P.flesh);_bpx(c,cx+14+rush+i*2,70+sway,1,6,P.flesh);}}
+   _bpx(c,cx-10,14+sway,20,20,P.veil);_bpx(c,cx-7,18+sway,14,16,P.flesh);_bpx(c,cx-10,14+sway,20,4,P.gownH);
+   _bpx(c,cx-1,16+sway,2,6,P.blood);_bpx(c,cx-3,18+sway,6,2,P.blood);
+   _bpx(c,cx-5,24+sway,4,4,P.eye);_bpx(c,cx+1,24+sway,4,4,P.eye);
+   _bpx(c,cx-4,28+sway,1,8,P.tear);_bpx(c,cx+2,28+sway,1,8,P.tear);
+   if(tele>0.4){_bpx(c,cx-3,31+sway,6,5,P.dark);} else {_bpx(c,cx-2,32+sway,4,1,P.fleshS);}
+  }},
+ vatborn:{pal:{flesh:'#6fa84a',fleshS:'#3c5f28',fleshH:'#a6d46a',sac:'#c7e08a',vein:'#2a3d18',dark:'#060a04',glow:'#b6ff5a'},
+  draw(c,t,tele,view){const S=_BOSS_S,cx=S/2,P=this.pal,pulse=Math.sin(t*3)*2+(tele*4);
+   // bulbous mass + sacs (all views — it's radial)
+   _bpx(c,cx-24,52,48,40,P.fleshS);_bpx(c,cx-20,50-pulse,40,42,P.flesh);
+   [[cx-14,64],[cx+6,70],[cx-4,78],[cx+12,60]].forEach((p,i)=>{const r=5+Math.sin(t*3+i)*1.5+tele*2;_bpx(c,p[0],p[1],r*2,r*2,P.sac);_bpx(c,p[0]+r*0.5,p[1]+r*0.5,r,r,P.glow);});
+   _bpx(c,cx-16,30-pulse,32,26,P.flesh);_bpx(c,cx-16,30-pulse,6,26,P.fleshS);
+   _bpx(c,cx-24,34-pulse,7,34,P.flesh);_bpx(c,cx+17,34-pulse,7,34,P.flesh);
+   _bpx(c,cx-26,66,9,10,P.fleshS);_bpx(c,cx+17,66,9,10,P.fleshS);
+   if(view==='front'){
+    for(let i=0;i<6;i++)_bpx(c,cx-12+i*4,32-pulse,1,20,P.vein);
+    _bpx(c,cx-7,18-pulse,14,14,P.flesh);
+    _bpx(c,cx-4,23-pulse,3,3,P.dark);_bpx(c,cx+1,23-pulse,3,3,P.dark);
+    if(tele>0.4){for(let i=0;i<4;i++)_bpx(c,cx-18+i*10,26,3,3,P.glow);}
+   } else if(view==='back'){
+    _bpx(c,cx-7,18-pulse,14,14,P.flesh);_bpx(c,cx-7,18-pulse,14,3,P.fleshS);      // head back, no eyes
+    for(let i=0;i<4;i++)_bpx(c,cx-10+i*6,32-pulse,2,18,P.fleshH);                 // spine lumps
+   } else { // side
+    _bpx(c,cx-5,18-pulse,13,14,P.flesh);_bpx(c,cx+4,23-pulse,3,3,P.dark);         // head profile, one eye
+    for(let i=0;i<3;i++)_bpx(c,cx-6+i*5,32-pulse,1,18,P.vein);
+   }
+  }},
+ subzero:{pal:{flesh:'#9ca177',fleshS:'#5e6245',fleshH:'#c6cb96',strap:'#d8cdb4',buckle:'#8a7a52',dark:'#070806',raw:'#7a2230',eye:'#efe14a',hair:'#3a3a28'},
+  draw(c,t,tele,view){const S=_BOSS_S,cx=S/2,P=this.pal,breathe=Math.sin(t*2.4)*2,armup=tele*16;
+   _bpx(c,cx-12,76,9,18,P.fleshS);_bpx(c,cx+4,78,9,16,P.fleshS);                  // legs
+   if(view==='back'){
+    _bpx(c,cx-15,34+breathe,30,42,P.flesh);_bpx(c,cx-15,34+breathe,6,42,P.fleshS);
+    for(let i=0;i<4;i++)_bpx(c,cx-12,41+i*7+breathe,24,2,P.fleshS);               // spine/shoulder blades
+    _bpx(c,cx-15,46+breathe,30,3,P.strap);                                        // strap across back
+    _bpx(c,cx-22,38+breathe,7,30,P.flesh);                                        // normal arm
+    _bpx(c,cx+14,32+breathe,16,34,P.flesh);                                       // big arm (back)
+    _bpx(c,cx-8,18+breathe,16,16,P.hair);_bpx(c,cx-8,18+breathe,16,3,P.dark);      // head back, no face
+    return;
+   }
+   if(view==='side'){
+    _bpx(c,cx-13,34+breathe,26,42,P.flesh);_bpx(c,cx-13,34+breathe,6,42,P.fleshS);
+    for(let i=0;i<3;i++){_bpx(c,cx-8,41+i*7+breathe,16,2,P.raw);}                  // ribs profile
+    _bpx(c,cx+6,30+breathe-armup*0.4,14,30,P.flesh);_bpx(c,cx+8,56+breathe-armup,18,15,P.flesh); // big arm forward
+    _bpx(c,cx-6,18+breathe,15,16,P.flesh);_bpx(c,cx-6,18+breathe,5,16,P.hair);
+    _bpx(c,cx+4,24+breathe,6,6,tele>0.3?'#fff07a':P.eye);
+    return;
+   }
+   // FRONT (approved)
+   _bpx(c,cx-15,34+breathe,30,42,P.flesh);_bpx(c,cx-15,34+breathe,6,42,P.fleshS);
+   for(let i=0;i<4;i++){_bpx(c,cx-10,40+i*7+breathe,20,2,P.raw);_bpx(c,cx-10,40+i*7+breathe,20,1,P.fleshH);}
+   _bpx(c,cx-15,46+breathe,30,3,P.strap);_bpx(c,cx-2,49+breathe,3,14,P.strap);_bpx(c,cx-2,62+breathe,4,3,P.buckle);
+   _bpx(c,cx-22,38+breathe,7,30,P.flesh);_bpx(c,cx-24,66,8,9,P.flesh);
+   _bpx(c,cx+14,30+breathe-armup*0.4,16,30,P.flesh);_bpx(c,cx+14,30+breathe-armup*0.4,16,6,P.fleshH);
+   _bpx(c,cx+16,56+breathe-armup,20,16,P.flesh);_bpx(c,cx+16,56+breathe-armup,20,4,P.fleshS);
+   for(let i=0;i<3;i++)_bpx(c,cx+18+i*6,54+breathe-armup,3,5,P.raw);
+   _bpx(c,cx-8,18+breathe,16,16,P.flesh);_bpx(c,cx-8,18+breathe,16,3,P.dark);
+   _bpx(c,cx-2,24+breathe,7,6,P.eye);_bpx(c,cx,26+breathe,3,3,P.dark);
+   if(tele>0.3){_bpx(c,cx-2,24+breathe,7,6,'#fff07a');}
+  }},
+ leviathan:{pal:{hide:'#4f7a86',hideS:'#2a4650',hideH:'#79b0bc',belly:'#8aa6a0',rust:'#6e4a2a',eye:'#bfe9ff',dark:'#05090b',water:'#aee0ef'},
+  draw(c,t,tele,view){const S=_BOSS_S,cx=S/2,P=this.pal,heave=Math.sin(t*1.8)*3,maw=tele*8;
+   _bpx(c,cx-26,54,52,38,P.hideS);_bpx(c,cx-22,50-heave,44,40,P.hide);            // mass (all)
+   _bpx(c,cx-30,40-heave,8,40,P.hide);_bpx(c,cx+22,40-heave,8,40,P.hide);          // limbs
+   _bpx(c,cx-33,76,11,10,P.hideS);_bpx(c,cx+22,76,11,10,P.hideS);
+   if(view==='back'){
+    [[cx-20,56],[cx+14,60],[cx-8,84],[cx+10,82],[cx-2,66]].forEach(p=>_bpx(c,p[0],p[1],6,6,P.rust));
+    _bpx(c,cx-18,24-heave,36,28,P.hide);_bpx(c,cx-18,24-heave,36,4,P.hideS);        // head back, no maw/eyes
+    for(let i=0;i<4;i++)_bpx(c,cx-14+i*8,30-heave,3,16,P.hideS);                   // dorsal ridges
+    return;
+   }
+   if(view==='side'){
+    _bpx(c,cx-10,62-heave,24,22,P.belly);
+    [[cx-14,60],[cx+8,66]].forEach(p=>_bpx(c,p[0],p[1],6,6,P.rust));
+    _bpx(c,cx-16,24-heave,34,28,P.hide);_bpx(c,cx-16,24-heave,7,28,P.hideS);
+    _bpx(c,cx+2,40-heave,14,6+maw,P.dark);                                        // maw to one side
+    for(let i=0;i<4;i++)_bpx(c,cx+3+i*3,40-heave,2,3,'#cdd9d0');
+    _bpx(c,cx+6,30-heave,6,4,P.eye);_bpx(c,cx+8,31-heave,2,2,P.dark);
+    return;
+   }
+   // FRONT (approved)
+   _bpx(c,cx-14,62-heave,28,22,P.belly);
+   [[cx-20,56],[cx+14,60],[cx-8,84],[cx+10,82]].forEach(p=>_bpx(c,p[0],p[1],6,6,P.rust));
+   _bpx(c,cx-18,24-heave,36,28,P.hide);_bpx(c,cx-18,24-heave,7,28,P.hideS);
+   _bpx(c,cx-10,40-heave,20,6+maw,P.dark);
+   for(let i=0;i<5;i++)_bpx(c,cx-9+i*4,40-heave,2,3,'#cdd9d0');
+   _bpx(c,cx-9,30-heave,6,4,P.eye);_bpx(c,cx+4,30-heave,6,4,P.eye);
+   _bpx(c,cx-7,31-heave,2,2,P.dark);_bpx(c,cx+6,31-heave,2,2,P.dark);
+   if(((t*3)|0)%2){_bpx(c,cx-16,50,2,6,P.water);_bpx(c,cx+14,54,2,6,P.water);}
+   if(tele>0.4){_bpx(c,cx-12,38-heave,24,3,P.water);}
+  }},
+};
+let _BOSS_S=96;
+function _bpx(c,x,y,w,h,col){c.fillStyle=col;c.fillRect(x|0,y|0,Math.ceil(w),Math.ceil(h));}
+function drawApprovedBoss(e){
+  const art=BOSS_ART[e.type]; if(!art) return drawCreature(e);
+  const S=64, s=document.createElement('canvas'); s.width=S;s.height=S; const c=s.getContext('2d');
+  const G=96, off=document.createElement('canvas'); off.width=G;off.height=G; const oc=off.getContext('2d');
+  let view=spriteView(e.x,e.y,e.heading||0);
+  const vkey=(view==='left')?'side':(view==='right')?'side':view;   // left = mirrored side
+  art.draw(oc, T, e._tele||0, vkey);
+  const strike=Math.max(0,Math.min(1,(e._strike||0)/0.2));
+  const hurt=(e.hitFlash>0 && !(e.state==='dead'))?1:0;
+  const dead=(e.state==='dead')?Math.min(1,(e._deadT||0)):0;
+  c.imageSmoothingEnabled=false; c.save();
+  if(dead>0){ c.globalAlpha=1-dead*0.55; c.translate(S/2, S); c.rotate(dead*1.4);           // topple toward the ground
+    c.translate(-S/2, -S + dead*10); }
+  else { let oy=0, ox=0, sc=1;
+    if(strike>0){ sc=1+0.10*strike; oy=6*strike; }                                          // strike lunge (bigger, steps in)
+    if(hurt){ oy=-4; ox=(view==='left')?3:-3; sc=0.96; }                                     // pain recoil (leans back)
+    c.translate(S/2+ox, S+oy); c.scale(sc,sc); c.translate(-S/2, -S); }
+  if(view==='left'){ c.translate(S,0); c.scale(-1,1); }                                      // mirror only the left
+  c.drawImage(off,0,0,G,G,0,0,S,S); c.restore();
+  if(e.hitFlash>0){ const id=c.getImageData(0,0,S,S),d=id.data; for(let i=0;i<d.length;i+=4){ if(d[i+3]>8){ d[i]=255;d[i+1]=215;d[i+2]=215; } } c.putImageData(id,0,0); }
+  if(typeof outlinePass==='function') outlinePass(c,S);
+  return s;
+}
+
 function drawPatientSprite(e){
-  if(e.type==='boss') return drawBossSprite(e);
+  if(typeof BOSS_ART!=='undefined' && BOSS_ART[e.type]) return drawApprovedBoss(e);
   if(ETYPES[e.type]&&ETYPES[e.type].bk) return drawBoss(e);
   return drawCreature(e);
 }
@@ -2749,6 +3247,55 @@ function drawPickups(){
   }
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
+
+// ── EXIT DOOR: a real door at meta.exit. Sealed while a boss lives, chained until
+// keys are found, open (green) when you may descend. Billboard with z-occlusion. ──
+function drawExitDoorSprite(state){ // state: 'sealed'|'locked'|'open'
+  const S=64, cv=document.createElement('canvas'); cv.width=S;cv.height=S; const g=cv.getContext('2d');
+  const B=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x|0,y|0,Math.ceil(w),Math.ceil(h));};
+  // stone frame
+  B(6,4,52,60,'#3a3630'); B(10,8,44,54,'#20242a');
+  // door panels (two leaves)
+  const leaf=state==='open'?'#2a3a2c':'#2d2a26', leafH=state==='open'?'#3f5a40':'#403a32';
+  B(12,10,19,50,leaf); B(33,10,19,50,leaf);
+  B(12,10,19,2,leafH); B(33,10,19,2,leafH);
+  B(30,10,4,50,'#14100e'); // center seam
+  // handles
+  B(26,34,3,6,'#8a7a52'); B(35,34,3,6,'#8a7a52');
+  if(state==='sealed'){ // heavy bar + red glow
+    B(8,30,48,6,'#5a1518'); B(8,30,48,2,'#9a3a3a');
+    for(let i=0;i<5;i++)B(12+i*9,31,3,4,'#20100e');
+    B(28,44,8,8,'#c0392b'); // red lock light
+  } else if(state==='locked'){ // chains
+    for(let i=0;i<6;i++){ B(20+i*4,12+i*7,5,5,'#6a6e76'); }
+    B(28,44,8,8,'#d9a441'); // amber lock light
+  } else { // open — green glow
+    B(28,44,8,8,'#4fe06a');
+    B(12,10,40,2,'#6aff8a');
+  }
+  return cv;
+}
+function drawExitDoor(){
+  if(!meta.exit) return;
+  const ex=meta.exit[0], ey=meta.exit[1];
+  const d=Math.hypot(ex-P.x,ey-P.y); if(d<0.2||d>18) return;
+  let rel=Math.atan2(ey-P.y,ex-P.x)-P.a; while(rel>Math.PI)rel-=6.283; while(rel<-Math.PI)rel+=6.283;
+  if(Math.abs(rel)>FOV/1.25) return;
+  const col=Math.floor((0.5+rel/FOV)*W), fog=Math.max(0.2,1-d/16);
+  const bossAlive=enemies.some(e=>e.boss&&e.state!=='dead');
+  const state=bossAlive?'sealed':(keyCount>=meta.keys.length?'open':'locked');
+  if(state!==meta._doorState){ meta._doorSprite=drawExitDoorSprite(state); meta._doorState=state; }
+  const sp=meta._doorSprite, SS=sp.width||64;
+  const floorY=H/2+(H/d)/2, size=Math.min(H*1.9,(H/d*1.0)|0), sy=floorY-size, sx=col-size/2;
+  // pulsing glow for an open door (draws the eye to the way out)
+  if(state==='open'){ ctx.save(); ctx.globalAlpha=fog*(0.25+0.15*Math.sin(T*4)); const gr=ctx.createRadialGradient(col,sy+size*0.6,0,col,sy+size*0.6,size);
+    gr.addColorStop(0,'rgba(80,230,120,0.7)'); gr.addColorStop(1,'rgba(80,230,120,0)'); ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(col,sy+size*0.6,size,0,7); ctx.fill(); ctx.restore(); }
+  ctx.save(); ctx.globalAlpha=fog; ctx.imageSmoothingEnabled=false;
+  for(let X=Math.max(0,sx|0);X<Math.min(W,(sx+size)|0);X++){ if(d>zbuf[X]+0.25)continue;
+    ctx.drawImage(sp,(X-sx)/size*SS,0,1,SS, X,sy, 1,size); }
+  ctx.restore();
+}
+
 function drawEnemies(){
   const list=enemies.map(e=>({e,d:Math.hypot(e.x-P.x,e.y-P.y)})).sort((a,b)=>b.d-a.d);
   for(const {e,d} of list){
@@ -2763,7 +3310,7 @@ function drawEnemies(){
     // changes (state/view/damage/flash), not every frame. This was rebuilding a
     // 64x64 canvas pixel-by-pixel per enemy per frame — the main perf sink.
     const view=spriteView(e.x,e.y,e.heading||0);
-    const bkey=e.type+'|'+e.state+'|'+view+'|'+(e.dmg*10|0)+'|'+(e.hitFlash>0?1:0);
+    const bkey=e.boss ? (e.type+'|'+e.state+'|'+view+'|'+((T*9)|0)+'|'+((e._strike||0)>0?1:0)+'|'+((e._deadT||0)*6|0)+'|'+(e.hitFlash>0?1:0)) : (e.type+'|'+e.state+'|'+view+'|'+(e.dmg*10|0)+'|'+(e.hitFlash>0?1:0));
     if(e._bkey!==bkey){ e._base=drawPatientSprite(e); e._bkey=bkey; e._shadeCache={}; }
     const sp=e._base, SS=sp.width||64;
     // SHADED SPRITE CACHE: shading is light*tint*fog over 4096 px. Quantise the
@@ -2888,6 +3435,7 @@ function hitEnemy(e,amount,dtype){
       if(!e._clang||T-e._clang>0.3){ e._clang=T; SFX.melee&&SFX.melee(e.x,e.y); } }
   }
   e.hp-=amount; e.hitFlash=e.hitFlash||0.08; e.dmg=Math.min(1,1-e.hp/e.maxhp);
+  if(e.hp>0 && (!e._painT || T-e._painT>0.22)){ e._painT=T; evox(e,'pain'); }
   hitMark=Math.max(hitMark,0.16); if(e.hp<=0)hitKill=0.30;
   if(MP.active&&MP.mode==='zombies'&&e.hp<=0&&!e._zc){ e._zc=1; MP.points+=40; if(MP.host){ MP.z.killed++; if(Math.random()<0.07) PICKUPS.push({x:e.x,y:e.y,kind:'health',amt:35}); } }
   if(typeof bloodSpray==='function') bloodSpray(e.x,e.y);
@@ -2905,7 +3453,7 @@ function hitEnemy(e,amount,dtype){
 }
 // central kill: aggression economy — CLOSE kills trickle ammo, finishers heal big.
 function killEnemy(e, dtype, finisher){
-  e.state='dead'; e.t=0; spawnBlood(e); killCount++; SFX.death(e.x,e.y); quip(); registerKill();
+  e.state='dead'; e.t=0; spawnBlood(e); killCount++; evox(e,'death'); quip(); registerKill();
   bloodSpray(e.x,e.y); bloodSpray(e.x,e.y); gibBurst(e.x,e.y); spawnBlood(e);   // insane gore
   const d=Math.hypot(e.x-P.x,e.y-P.y);
   if(finisher){
@@ -2971,7 +3519,7 @@ function pickups(){
     const dx=meta.exit[0]-P.x, dy=meta.exit[1]-P.y;
     if(dx*dx+dy*dy<0.6){
       const bossAlive=enemies.some(e=>e.boss&&e.state!=='dead');
-      if(bossAlive) flashOnce('boss', levelIdx===1?'THE SISTER WILL NOT LET YOU PASS.':'THE ORDERLY BLOCKS THE WAY. PUT IT DOWN.',1600);
+      if(bossAlive){ const bn=(enemies.find(e=>e.boss&&e.state!=='dead')||{}).type; flashOnce('boss',(BOSS_NAMES[bn]||'SOMETHING')+' BLOCKS THE WAY. PUT IT DOWN.',1600); }
       else if(keyCount>=meta.keys.length){ winFloor(); }
       else flashOnce('exitlock','THE EXIT IS CHAINED. FIND THE KEYS.',1600);
     }
@@ -3055,11 +3603,13 @@ function moveToward(e,tx,ty,speed,dt){
   }
   return d;                                    // truly boxed in this frame
 }
+const BOSS_ADDS={ boss:'basic', sister:'fast', subzero:'breacher' };  // vatborn & leviathan have their own summons
 function updateEnemies(dt){
   for(const e of enemies){
     const ET=ETYPES[e.type]||ETYPES.basic;   // type data in scope for the whole update
     e.t+=dt; if(e.hitFlash>0)e.hitFlash-=dt;
     if(e.state==='dead'){
+      if(e.boss) e._deadT=Math.min(1,(e._deadT||0)+dt*2.2);   // boss topple/fade progress
       for(const bp of floorBlood){ if(bp.grow && Math.abs(bp.x-e.x)<0.01 && Math.abs(bp.y-e.y)<0.01){
         if(bp.r<1.1){ bp.r+=dt*0.5; } else { bp.grow=0; } } }
       continue;
@@ -3068,6 +3618,66 @@ function updateEnemies(dt){
     if(e.staggerT>0){ e.staggerT-=dt; continue; }
     const dx=P.x-e.x,dy=P.y-e.y,dist=Math.hypot(dx,dy);
     const sees=canSee(e);
+    // ===== APPROVED BOSS ATTACKS (fit each design) + telegraph driver =====
+    if(e.boss && e.state!=='dormant' && e.state!=='dead'){
+      e._tele=Math.max(0,(e._tele||0)-dt*2.5); e._strike=Math.max(0,(e._strike||0)-dt);   // decay telegraph + strike
+      // CONTINUOUS ARENA ADDS until the boss dies — escalates as the boss weakens
+      if(sees && BOSS_ADDS[e.type]){
+        const hpF=e.hp/e.maxhp;
+        e._addT=(e._addT===undefined?2.5:e._addT)-dt;
+        const live=enemies.filter(o=>!o.boss&&o.state!=='dead').length;
+        const cap=3+Math.round((1-hpF)*4);                       // 3 -> 7 as it weakens
+        if(e._addT<=0 && live<cap){
+          e._addT=Math.max(1.1, 2.6-(1-hpF)*1.4);                // 2.6s -> 1.2s
+          for(let tr=0;tr<12;tr++){ const aa=Math.random()*6.28, rr=2.2+Math.random()*2.6;
+            const sxx=e.x+Math.cos(aa)*rr, syy=e.y+Math.sin(aa)*rr;
+            if(!solidR(sxx,syy,0.3) && Math.hypot(sxx-P.x,syy-P.y)>2){
+              const ad=makeEnemy(sxx,syy,BOSS_ADDS[e.type]); ad.state='chase'; ad.confirm=1; ad.lkx=P.x; ad.lky=P.y; enemies.push(ad); break; } }
+        }
+      }
+      const face=()=>{ e.facing=Math.atan2(dy,dx); e.heading=e.facing; };
+      // SUBJECT ZERO (F4): charge to close, then a telegraphed ground-slam shockwave.
+      if(e.type==='subzero'){
+        face();
+        if(e._slamW>0){ e._slamW-=dt; e._tele=1; e.spd=0;     // planted during the slam wind-up
+          if(e._slamW<=0){ const a=e.facing; SFX.attack&&SFX.attack(e.x,e.y); shake=Math.min(1,shake+0.4);
+            for(let k=-2;k<=2;k++){ const aa=a+k*0.28; projectiles.push({x:e.x+Math.cos(aa),y:e.y+Math.sin(aa),vx:Math.cos(aa)*6,vy:Math.sin(aa)*6,life:0.5,dmg:22}); }
+            if(dist<2.4) hurtPlayer(28); e._strike=0.2; }
+          continue; }
+        e._slamCd=(e._slamCd||0)-dt;
+        const enr=e.hp/e.maxhp<0.4?1:0;                       // enrage under 40%
+        if(sees && dist<2.6 && e._slamCd<=0){ e._slamW=enr?0.3:0.5; e._slamCd=enr?2.0:3.0; SFX.shriek&&SFX.shriek(e.x,e.y); e._tele=1; continue; }
+        if(sees){ moveToward(e,P.x,P.y,(e.chase||2.2)*(enr?1.4:1),dt); e.spd=e.chase; e.lkx=P.x;e.lky=P.y; }
+        else { moveToward(e,e.lkx||P.x,e.lky||P.y,e.chase||2.2,dt); }
+        continue;
+      }
+      // LEVIATHAN (F5): electrified-water lob (drops a shocked puddle) + summon Drowned + melee sweep.
+      if(e.type==='leviathan'){
+        face();
+        if(e._lobW>0){ e._lobW-=dt; e._tele=1; e.spd=0;
+          if(e._lobW<=0){ const a=e.windAim; SFX.attack&&SFX.attack(e.x,e.y);
+            projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*5,vy:Math.sin(a)*5,life:2.2,dmg:20,lob:1}); e._strike=0.2; }
+          continue; }
+        e._lobCd=(e._lobCd||0)-dt; e._sumCd=(e._sumCd||0)-dt;
+        // summon up to 2 Drowned adds occasionally
+        const adds=enemies.filter(o=>o.type==='drowned'&&o.state!=='dead').length;
+        if(sees && e._sumCd<=0 && adds<3){ e._sumCd=9; e._tele=1;
+          for(let n=0;n<2;n++){ const aa=Math.random()*6.28, px=e.x+Math.cos(aa)*1.6, py=e.y+Math.sin(aa)*1.6;
+            if(!solid(px,py)){ const ad=makeEnemy(px,py,'drowned'); ad.state='chase'; ad.confirm=1; ad.lkx=P.x; ad.lky=P.y; enemies.push(ad); } }
+          continue; }
+        if(sees && dist>3 && dist<12 && e._lobCd<=0){ e._lobW=0.6; e._lobCd=3.2; e.windAim=Math.atan2(dy,dx); e._tele=1; SFX.shriek&&SFX.shriek(e.x,e.y); continue; }
+        if(sees && dist<=2.6){ if((e._swCd=(e._swCd||0)-dt)<=0){ e._swCd=1.4; e._tele=1; if(dist<2.6)hurtPlayer(30); e._strike=0.18; SFX.attack&&SFX.attack(e.x,e.y); } }
+        if(sees){ moveToward(e,P.x,P.y,e.chase||1.15,dt); e.lkx=P.x;e.lky=P.y; }
+        else { moveToward(e,e.lkx||P.x,e.lky||P.y,e.chase||1.15,dt); }
+        continue;
+      }
+      // ORDERLY (F1): keep its ranged lob (handled below) but ADD a close overhead smash.
+      if(e.type==='boss' && sees && dist<2.4 && (e._smCd=(e._smCd||0)-dt)<=0 && (e.rangeWind||0)<=0){
+        e._smCd=2.4; e._tele=1; SFX.attack&&SFX.attack(e.x,e.y); if(dist<2.6)hurtPlayer(30); e._strike=0.2; shake=Math.min(1,shake+0.3);
+      }
+      // sprite telegraph for the existing Sister scream / Vat-Born spawn / Orderly wind
+      if(e.rangeWind>0 || e.rushT>0 || e._slamW>0 || e._lobW>0) e._tele=1;
+    }
     // ENTRY PHASE (zombies): beeline the breach waypoint, ignoring the player,
     // until MP.step clears zentry (once inside). Stops greedy chase pinning the
     // zombie in its off-map pocket when the player is in an awkward direction.
@@ -3131,6 +3741,7 @@ function updateEnemies(dt){
     // the player, shrinking the safe space. The fight is crowd-control, not DPS.
     if(ET.spawner && e.state!=='dormant' && sees){
       e.spawnT=(e.spawnT||0)-dt; e.puddleT=(e.puddleT||0)-dt;
+      if(e.spawnT<0.6) e._tele=1;   // sacs swell before spawning
       // count living adds this boss made
       const adds=enemies.filter(o=>o._parent===e && o.state!=='dead').length;
       if(e.spawnT<=0 && adds<ET.spawnMax){
@@ -3147,7 +3758,7 @@ function updateEnemies(dt){
         e.puddleT=ET.puddleCd;
         // drop a chemical puddle (fire hazard) near the player's feet
         const px=P.x+(Math.random()*2-1), py=P.y+(Math.random()*2-1);
-        if(!solid(px,py)){ HAZARDS.push({x:px,y:py,r:1.0,dps:12,fuel:'chem',_temp:T+8}); }  // lingers 8s
+        if(!solid(px,py)){ const _h={x:px,y:py,r:1.0,dps:12,fuel:'chem',_temp:T+8}; _h._vis=computeVis(px,py,3.5); HAZARDS.push(_h); }  // lingers 8s
       }
     }
 
@@ -3189,7 +3800,7 @@ function updateEnemies(dt){
         }
         continue;
       }
-      if(dist<=RABID.attackRange+0.3 && sees){ e.state='attack'; e.t=0; SFX.attack(e.x,e.y); continue; }
+      if(dist<=RABID.attackRange+0.3 && sees){ e.state='attack'; e.t=0; evox(e,'attack'); continue; }
       // rush cycle: bursts of terrifying speed, then a short blown-out recovery
       e.rushCd=(e.rushCd||0)-dt;
       if(e.rushT>0){
@@ -3223,7 +3834,7 @@ function updateEnemies(dt){
           }
           continue;                                    // planted while winding
         }
-        if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; SFX.attack(e.x,e.y); continue; }
+        if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; evox(e,'attack'); continue; }
         if(sees){
           e.lkx=P.x; e.lky=P.y;
           e.rangeCd=(e.rangeCd||0)-dt;
@@ -3248,7 +3859,7 @@ function updateEnemies(dt){
           continue;
         }
       }
-      if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; SFX.attack(e.x,e.y); continue; }
+      if(dist<=RABID.attackRange && sees){ e.state='attack'; e.t=0; evox(e,'attack'); continue; }
       // BOSS ranged attack: at mid-range with line of sight, hurl a projectile
       // Mid-range only. At 11 tiles this was a cross-room sniper: the projectile
       // draws as a ~6px dot on the horizon and SFX.bossRanged never existed, so
@@ -3379,15 +3990,32 @@ function initAudio(){
   if(AC) return;
   try{ AC=new (window.AudioContext||window.webkitAudioContext)();
     master=AC.createGain(); master.gain.value=0.85; master.connect(AC.destination);
-    // REVERB TAIL BUS: a short procedural impulse response = the room reflection
-    // that every real gunshot has (the missing "tail" layer). Dark, ~0.5s.
-    revBus=AC.createGain(); revBus.gain.value=0.9;
-    const cv=AC.createConvolver(); const irLen=Math.floor(AC.sampleRate*0.5);
+    // REVERB TAIL BUS: a long, DARK asylum-hall impulse response. A scream here
+    // doesn't just fire and stop — it hangs and smears down the concrete corridors,
+    // which is what makes the voices land as terrifying rather than just loud.
+    //   • ~2.2s tail (cavernous), exponential decay
+    //   • progressive one-pole lowpass so the tail MUFFLES as it fades (distance/concrete)
+    //   • short pre-delay gap + a couple of early reflections (the room has walls)
+    //   • slight L/R decorrelation = a wide, unstable space
+    revBus=AC.createGain(); revBus.gain.value=0.95;
+    const cv=AC.createConvolver(); const irLen=Math.floor(AC.sampleRate*2.2);
+    const pre=Math.floor(AC.sampleRate*0.012);               // 12ms pre-delay
     const ir=AC.createBuffer(2,irLen,AC.sampleRate);
     for(let ch=0;ch<2;ch++){ const d=ir.getChannelData(ch);
-      for(let i=0;i<irLen;i++){ const decay=Math.pow(1-i/irLen,2.6);
-        d[i]=(Math.random()*2-1)*decay*0.5; } }
-    cv.buffer=ir; revSend=AC.createGain(); revSend.gain.value=0.35;
+      let lp=0; const damp=0.18+ch*0.02;                     // tail darkens over time
+      for(let i=0;i<irLen;i++){
+        if(i<pre){ d[i]=0; continue; }
+        const p=(i-pre)/(irLen-pre);
+        const decay=Math.pow(1-p,2.2)*Math.exp(-p*3.0);      // exp decay, long
+        let s=(Math.random()*2-1)*decay;
+        lp+=(s-lp)*(damp*(1-p*0.85)+0.02);                   // one-pole LP, gets darker as p->1
+        d[i]=lp*0.9;
+      }
+      // early reflections — discrete taps so it reads as an enclosed hall
+      [0.019,0.031,0.047,0.071].forEach((tms,k)=>{ const idx=pre+Math.floor(tms*AC.sampleRate);
+        if(idx<irLen) d[idx]+=(Math.random()*2-1)*(0.5-k*0.1); });
+    }
+    cv.buffer=ir; revSend=AC.createGain(); revSend.gain.value=0.5;
     revSend.connect(cv); cv.connect(revBus); revBus.connect(master);
     initSamples();
   }catch(e){ AC=null; }
@@ -3431,26 +4059,84 @@ function noise({dur=0.2,vol=0.3,pan=0,lp=1200,hp=0}){
 // --- the sound kit ---
 // vocal-ish source: buzzy glottis -> 2 bandpass formants + breath noise = organic
 // (formants are what make a buzz read as a VOICE instead of a synth tone)
-function voice({f0=200,dur=0.5,vol=0.4,pan=0,f1=700,f2=1200,slide=0.6,rough=0.3,rev=0.2}){
-  if(!AC)return; const t=AC.currentTime;
+// ══ TERROR VOICE (researched fear-acoustics) ══
+// The amygdala responds to ROUGHNESS: amplitude/frequency modulation in the
+// 30–150 Hz band (normal speech modulates at 4–5 Hz). Real terrifying vocalisations
+// pile on NONLINEAR PHENOMENA that a healthy larynx never makes:
+//   • subharmonics  — energy at f0/2, f0/3 (a sub-octave growl under the pitch)
+//   • biphonation   — two INHARMONIC pitches at once (e.g. 1 : 1.41) that beat
+//   • deterministic chaos — the voice breaks into noise (jitter + broadband hiss)
+//   • frequency jumps / downward glides — a looming, collapsing pitch
+//   • dissonance    — mistuned partials beating inside the roughness band
+// voice() is a drop-in superset of the old one: f0/dur/vol/pan/f1/f2/slide/rough/rev
+// behave as before, and the new terror params default ON so every caller gets scarier.
+//   rm    : ring-mod / AM depth driver for roughness (the amygdala hijack)
+//   rmHz  : modulation rate (30–150 Hz = fear band)
+//   sub   : subharmonic (f0/2) level
+//   biph  : biphonation partner level (inharmonic)
+//   biphR : biphonation frequency ratio (inharmonic ≈ 1.41)
+//   chaos : deterministic-chaos amount (jitter + noise breakdown)
+//   drive : waveshaper distortion (harsh grit)
+function voice({f0=200,dur=0.5,vol=0.4,pan=0,f1=700,f2=1200,slide=0.5,rough=0.3,rev=0.2,
+                rm=0.55,rmHz=0,sub=0.5,biph=0.3,biphR=1.414,chaos=0.35,drive=0.4}){
+  if(!AC)return; const t=AC.currentTime, end=t+dur;
+  const R=(a,b)=>a+Math.random()*(b-a);
+  if(!rmHz) rmHz=R(40,95);                         // land inside the 30–150 Hz fear band
+  // ---- fundamental: a sawtooth that FALLS (looming / collapsing threat) ----
   const o=AC.createOscillator(); o.type='sawtooth';
-  o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(Math.max(40,f0*slide),t+dur);
-  // pitch wobble = instability (real screams break/waver)
-  const lfo=AC.createOscillator(), lfoG=AC.createGain(); lfo.frequency.value=8+Math.random()*10;
-  lfoG.gain.value=f0*rough; lfo.connect(lfoG); lfoG.connect(o.frequency); lfo.start(t); lfo.stop(t+dur);
+  o.frequency.setValueAtTime(f0,t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(38,f0*slide),end);
+  // slow instability wobble (screams waver) + fast chaos jitter on the pitch
+  const lfo=AC.createOscillator(), lfoG=AC.createGain(); lfo.frequency.value=R(7,16);
+  lfoG.gain.value=f0*rough; lfo.connect(lfoG); lfoG.connect(o.frequency); lfo.start(t); lfo.stop(end);
+  if(chaos>0){
+    const jn=AC.createBufferSource(); const jb=AC.createBuffer(1,Math.max(1,(AC.sampleRate*dur)|0),AC.sampleRate);
+    const jd=jb.getChannelData(0); for(let i=0;i<jd.length;i++) jd[i]=(Math.random()*2-1);
+    jn.buffer=jb; const jg=AC.createGain(); jg.gain.value=f0*0.9*chaos; jn.connect(jg); jg.connect(o.frequency);
+    jn.start(t); jn.stop(end);
+  }
+  // ---- subharmonic: f0/2 sub-octave growl ----
+  let subO=null;
+  if(sub>0){ subO=AC.createOscillator(); subO.type='square';
+    subO.frequency.setValueAtTime(f0/2,t); subO.frequency.exponentialRampToValueAtTime(Math.max(28,f0*slide/2),end); }
+  // ---- biphonation: an INHARMONIC second voice that beats against the first ----
+  let bi=null;
+  if(biph>0){ bi=AC.createOscillator(); bi.type='sawtooth';
+    bi.frequency.setValueAtTime(f0*biphR,t); bi.frequency.exponentialRampToValueAtTime(Math.max(40,f0*slide*biphR),end); }
+  // ---- formant bandpasses (vocal colour) ----
   const bp1=AC.createBiquadFilter(); bp1.type='bandpass'; bp1.frequency.value=f1; bp1.Q.value=6;
   const bp2=AC.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value=f2; bp2.Q.value=8;
-  const mix=AC.createGain(); mix.gain.setValueAtTime(vol,t); mix.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o.connect(bp1); o.connect(bp2); bp1.connect(mix); bp2.connect(mix);
-  // breath layer
-  const bn=AC.createBuffer(1,Math.floor(AC.sampleRate*dur),AC.sampleRate),bd=bn.getChannelData(0);
-  for(let i=0;i<bd.length;i++) bd[i]=(Math.random()*2-1)*Math.pow(1-i/bd.length,1.5)*0.3;
-  const bsrc=AC.createBufferSource();bsrc.buffer=bn;const bf=AC.createBiquadFilter();bf.type='bandpass';bf.frequency.value=f2*1.2;
-  bsrc.connect(bf); bf.connect(mix);
+  // ---- waveshaper grit (odd harmonics = harshness) ----
+  let shaper=null;
+  if(drive>0){ shaper=AC.createWaveShaper(); const n=1024, cv=new Float32Array(n), k=drive*60;
+    for(let i=0;i<n;i++){ const x=i/(n-1)*2-1; cv[i]=(1+k)*x/(1+k*Math.abs(x)); } shaper.curve=cv; shaper.oversample='2x'; }
+  // ---- ROUGHNESS: a fast amplitude modulator in the fear band = the amygdala hijack ----
+  const vca=AC.createGain(); vca.gain.setValueAtTime(vol,t); vca.gain.exponentialRampToValueAtTime(0.001,end);
+  const rmG=AC.createGain(); // the carrier passes through here, its gain pumped at rmHz
+  if(rm>0){ rmG.gain.value=1-rm*0.5;
+    const mod=AC.createOscillator(); mod.type='sine'; mod.frequency.setValueAtTime(rmHz,t);
+    mod.frequency.linearRampToValueAtTime(rmHz*R(0.7,1.3),end);           // modulation drifts (chaos)
+    const modG=AC.createGain(); modG.gain.value=rm*0.5; mod.connect(modG); modG.connect(rmG.gain);
+    mod.start(t); mod.stop(end);
+  } else rmG.gain.value=1;
+  // routing: osc+sub+biph -> formants -> shaper -> roughness VCA -> envelope
+  o.connect(bp1); o.connect(bp2);
+  if(subO) subO.connect(bp1);
+  if(bi) bi.connect(bp2);
+  const pre=AC.createGain();
+  bp1.connect(pre); bp2.connect(pre);
+  if(shaper){ pre.connect(shaper); shaper.connect(rmG); } else pre.connect(rmG);
+  rmG.connect(vca);
+  // ---- breath / chaotic hiss layer (louder with chaos) ----
+  const bn=AC.createBuffer(1,Math.max(1,(AC.sampleRate*dur)|0),AC.sampleRate),bd=bn.getChannelData(0);
+  for(let i=0;i<bd.length;i++) bd[i]=(Math.random()*2-1)*Math.pow(1-i/bd.length,1.5)*(0.3+chaos*0.5);
+  const bsrc=AC.createBufferSource();bsrc.buffer=bn;const bf=AC.createBiquadFilter();bf.type='bandpass';bf.frequency.value=f2*1.2; bf.Q.value=1.2;
+  bsrc.connect(bf); bf.connect(vca);
   const pn=AC.createStereoPanner?AC.createStereoPanner():null;
-  if(pn){pn.pan.value=pan;mix.connect(pn);pn.connect(master); if(revSend&&rev){const rg=AC.createGain();rg.gain.value=rev;pn.connect(rg);rg.connect(revSend);}}
-  else mix.connect(master);
-  o.start(t); o.stop(t+dur+0.02); bsrc.start(t);
+  if(pn){pn.pan.value=pan;vca.connect(pn);pn.connect(master); if(revSend&&rev){const rg=AC.createGain();rg.gain.value=rev;pn.connect(rg);rg.connect(revSend);}}
+  else vca.connect(master);
+  o.start(t); o.stop(end+0.02); bsrc.start(t);
+  if(subO){subO.start(t);subO.stop(end+0.02);} if(bi){bi.start(t);bi.stop(end+0.02);}
 }
 // ══ LAYERED SOUND-DESIGN PRIMITIVES (researched: transient+blast+bass+mech+tail) ══
 // A shaped noise burst with an exponential (Friedlander) decay = a muzzle blast.
@@ -3542,6 +4228,103 @@ function playSample(name, wx, wy){
 // wrap: try sample first, else run the synth fn
 function snd(name, synthFn, wx, wy){ if(playSample(name,wx,wy)) return; if(synthFn) synthFn(); }
 
+// ══ PER-ENEMY VOICE TABLE ══════════════════════════════════════════════════
+// Every enemy type gets its OWN attack / pain / death / idle voice, built from
+// the fear-acoustics voice() synth. Each recipe is just voice() params; the
+// dispatcher adds positional volume (so idles swell as you approach and are
+// silent from across the map) plus a little per-call jitter so it never repeats
+// identically. `md` overrides the kind's default audible range.
+// Character sketch per type drives the numbers: wet/low = drowned & leviathan,
+// shrill/manic = fast & screamer, booming = tank & bosses, breathy = nurse, etc.
+const VOX_RANGE={ idle:8.5, pain:12, attack:11, death:14 };   // default audible radius (world tiles)
+const VOX={
+  // ---- rank & file ----
+  basic:   { idle:{f0:150,dur:0.9,f1:400,f2:900,slide:0.6,rough:0.3,rm:0.55,rmHz:38,sub:0.6,biph:0.25,biphR:1.5,chaos:0.3,drive:0.35,vol:0.3,rev:0.55},
+             pain:{f0:360,dur:0.3,f1:800,f2:1700,slide:0.75,rough:0.4,rm:0.6,rmHz:60,sub:0.4,biph:0.4,chaos:0.45,drive:0.5,vol:0.5,rev:0.5},
+             attack:{f0:300,dur:0.28,f1:700,f2:1500,slide:0.8,rough:0.4,rm:0.7,rmHz:70,sub:0.5,biph:0.4,chaos:0.5,drive:0.6,vol:0.52,rev:0.4},
+             death:{f0:240,dur:0.7,f1:500,f2:1100,slide:0.22,rough:0.35,rm:0.65,rmHz:44,sub:0.7,biph:0.35,chaos:0.7,drive:0.5,vol:0.54,rev:0.68} },
+  breacher:{ idle:{f0:120,dur:1.0,f1:360,f2:820,slide:0.55,rough:0.3,rm:0.6,rmHz:34,sub:0.7,biph:0.3,biphR:1.44,chaos:0.35,drive:0.45,vol:0.32,rev:0.55},
+             pain:{f0:300,dur:0.32,f1:720,f2:1500,slide:0.7,rough:0.45,rm:0.7,rmHz:55,sub:0.5,biph:0.45,chaos:0.5,drive:0.65,vol:0.52,rev:0.5},
+             attack:{f0:250,dur:0.3,f1:640,f2:1400,slide:0.78,rough:0.45,rm:0.8,rmHz:64,sub:0.6,biph:0.45,biphR:1.44,chaos:0.6,drive:0.72,vol:0.56,rev:0.42},
+             death:{f0:210,dur:0.75,f1:460,f2:1000,slide:0.2,rough:0.35,rm:0.65,rmHz:40,sub:0.75,biph:0.35,chaos:0.72,drive:0.55,vol:0.56,rev:0.68} },
+  // ---- wet things (flooded floors) ----
+  drowned: { idle:{f0:95,dur:1.3,f1:300,f2:700,slide:0.6,rough:0.25,rm:0.65,rmHz:30,sub:0.85,biph:0.4,biphR:1.33,chaos:0.4,drive:0.3,vol:0.3,rev:0.8},
+             pain:{f0:200,dur:0.4,f1:500,f2:1000,slide:0.6,rough:0.35,rm:0.6,rmHz:42,sub:0.7,biph:0.45,chaos:0.6,drive:0.4,vol:0.48,rev:0.7},
+             attack:{f0:170,dur:0.34,f1:460,f2:1050,slide:0.7,rough:0.35,rm:0.7,rmHz:48,sub:0.7,biph:0.45,biphR:1.33,chaos:0.6,drive:0.5,vol:0.5,rev:0.6},
+             death:{f0:150,dur:0.9,f1:360,f2:800,slide:0.18,rough:0.3,rm:0.6,rmHz:36,sub:0.9,biph:0.4,chaos:0.8,drive:0.4,vol:0.52,rev:0.85} },
+  // ---- the lunatic: thin, manic, high ----
+  fast:    { idle:{f0:420,dur:0.5,f1:1100,f2:2600,slide:0.7,rough:0.4,rm:0.6,rmHz:75,sub:0.2,biph:0.5,biphR:1.26,chaos:0.5,drive:0.4,vol:0.24,rev:0.5},
+             pain:{f0:700,dur:0.22,f1:1300,f2:3000,slide:0.8,rough:0.5,rm:0.75,rmHz:95,sub:0.2,biph:0.55,chaos:0.6,drive:0.6,vol:0.46,rev:0.45},
+             attack:{f0:620,dur:0.3,f1:1200,f2:2800,slide:0.6,rough:0.55,rm:0.85,rmHz:110,sub:0.25,biph:0.6,biphR:1.26,chaos:0.7,drive:0.7,vol:0.5,rev:0.4},
+             death:{f0:560,dur:0.5,f1:1000,f2:2300,slide:0.2,rough:0.45,rm:0.7,rmHz:70,sub:0.4,biph:0.5,chaos:0.8,drive:0.6,vol:0.48,rev:0.6} },
+  tank:    { idle:{f0:70,dur:1.6,f1:260,f2:600,slide:0.7,rough:0.2,rm:0.6,rmHz:30,sub:0.95,biph:0.2,biphR:1.5,chaos:0.25,drive:0.4,vol:0.34,rev:0.7,md:11},
+             pain:{f0:150,dur:0.5,f1:380,f2:850,slide:0.6,rough:0.3,rm:0.6,rmHz:38,sub:0.8,biph:0.3,chaos:0.4,drive:0.6,vol:0.56,rev:0.6},
+             attack:{f0:110,dur:0.5,f1:320,f2:760,slide:0.72,rough:0.3,rm:0.75,rmHz:42,sub:0.9,biph:0.3,chaos:0.45,drive:0.7,vol:0.62,rev:0.55,md:13},
+             death:{f0:95,dur:1.1,f1:280,f2:650,slide:0.16,rough:0.25,rm:0.6,rmHz:32,sub:0.95,biph:0.3,chaos:0.7,drive:0.6,vol:0.6,rev:0.75} },
+  crawler: { idle:{f0:200,dur:0.6,f1:700,f2:1800,slide:0.8,rough:0.45,rm:0.7,rmHz:85,sub:0.3,biph:0.4,biphR:1.59,chaos:0.55,drive:0.55,vol:0.26,rev:0.45},
+             pain:{f0:420,dur:0.25,f1:900,f2:2000,slide:0.8,rough:0.5,rm:0.75,rmHz:90,sub:0.3,biph:0.5,chaos:0.6,drive:0.65,vol:0.46,rev:0.4},
+             attack:{f0:360,dur:0.26,f1:820,f2:1900,slide:0.85,rough:0.5,rm:0.8,rmHz:100,sub:0.35,biph:0.5,biphR:1.59,chaos:0.7,drive:0.7,vol:0.5,rev:0.38},
+             death:{f0:300,dur:0.55,f1:700,f2:1600,slide:0.2,rough:0.45,rm:0.7,rmHz:72,sub:0.45,biph:0.45,chaos:0.8,drive:0.6,vol:0.48,rev:0.6} },
+  shambler:{ idle:{f0:110,dur:1.4,f1:320,f2:760,slide:0.6,rough:0.25,rm:0.55,rmHz:32,sub:0.8,biph:0.3,biphR:1.5,chaos:0.3,drive:0.35,vol:0.3,rev:0.7},
+             pain:{f0:220,dur:0.42,f1:520,f2:1050,slide:0.6,rough:0.35,rm:0.6,rmHz:42,sub:0.7,biph:0.35,chaos:0.5,drive:0.45,vol:0.5,rev:0.6},
+             attack:{f0:180,dur:0.4,f1:460,f2:980,slide:0.7,rough:0.35,rm:0.72,rmHz:46,sub:0.75,biph:0.35,chaos:0.55,drive:0.55,vol:0.52,rev:0.5},
+             death:{f0:160,dur:0.85,f1:380,f2:820,slide:0.18,rough:0.3,rm:0.6,rmHz:36,sub:0.85,biph:0.35,chaos:0.75,drive:0.45,vol:0.52,rev:0.75} },
+  spitter: { idle:{f0:160,dur:0.8,f1:900,f2:2200,slide:0.7,rough:0.4,rm:0.6,rmHz:60,sub:0.3,biph:0.5,biphR:1.41,chaos:0.55,drive:0.4,vol:0.26,rev:0.5},
+             pain:{f0:360,dur:0.26,f1:1000,f2:2300,slide:0.8,rough:0.45,rm:0.7,rmHz:75,sub:0.3,biph:0.5,chaos:0.6,drive:0.55,vol:0.46,rev:0.45},
+             attack:{f0:240,dur:0.4,f1:700,f2:2600,slide:1.4,rough:0.5,rm:0.75,rmHz:80,sub:0.3,biph:0.55,chaos:0.75,drive:0.6,vol:0.5,rev:0.4},  // retch/hawk: pitch RISES
+             death:{f0:260,dur:0.55,f1:760,f2:1800,slide:0.2,rough:0.4,rm:0.65,rmHz:60,sub:0.4,biph:0.5,chaos:0.8,drive:0.55,vol:0.48,rev:0.6} },
+  nurse:   { idle:{f0:330,dur:1.0,f1:1300,f2:2800,slide:0.85,rough:0.15,rm:0.45,rmHz:40,sub:0.25,biph:0.55,biphR:1.19,chaos:0.2,drive:0.2,vol:0.22,rev:0.65},  // cold, breathy, eerie-pretty
+             pain:{f0:560,dur:0.26,f1:1400,f2:3000,slide:0.8,rough:0.4,rm:0.65,rmHz:70,sub:0.2,biph:0.55,chaos:0.5,drive:0.5,vol:0.44,rev:0.5},
+             attack:{f0:440,dur:0.3,f1:1300,f2:2900,slide:0.9,rough:0.3,rm:0.6,rmHz:55,sub:0.3,biph:0.6,biphR:1.19,chaos:0.45,drive:0.45,vol:0.46,rev:0.5},
+             death:{f0:420,dur:0.6,f1:1100,f2:2400,slide:0.2,rough:0.35,rm:0.6,rmHz:55,sub:0.4,biph:0.55,chaos:0.7,drive:0.45,vol:0.46,rev:0.65} },
+  cougher: { idle:{f0:140,dur:0.5,f1:500,f2:1400,slide:1.3,rough:0.5,rm:0.7,rmHz:50,sub:0.5,biph:0.3,chaos:0.7,drive:0.5,vol:0.3,rev:0.55},  // wet hacking cough (pitch jumps up)
+             pain:{f0:300,dur:0.3,f1:700,f2:1600,slide:0.7,rough:0.45,rm:0.65,rmHz:55,sub:0.5,biph:0.35,chaos:0.65,drive:0.55,vol:0.48,rev:0.5},
+             attack:{f0:160,dur:0.45,f1:560,f2:1500,slide:1.5,rough:0.55,rm:0.75,rmHz:52,sub:0.55,biph:0.3,chaos:0.8,drive:0.6,vol:0.5,rev:0.45},
+             death:{f0:200,dur:0.8,f1:480,f2:1100,slide:0.18,rough:0.45,rm:0.6,rmHz:42,sub:0.7,biph:0.35,chaos:0.85,drive:0.55,vol:0.5,rev:0.7} },
+  watcher: { idle:{f0:520,dur:1.4,f1:1600,f2:3400,slide:0.95,rough:0.1,rm:0.5,rmHz:66,sub:0.15,biph:0.7,biphR:1.07,chaos:0.15,drive:0.15,vol:0.2,rev:0.7,md:10},  // high dissonant whine
+             pain:{f0:700,dur:0.22,f1:1700,f2:3600,slide:0.8,rough:0.35,rm:0.6,rmHz:80,sub:0.15,biph:0.65,chaos:0.4,drive:0.4,vol:0.4,rev:0.5},
+             attack:{f0:600,dur:0.3,f1:1600,f2:3400,slide:0.85,rough:0.3,rm:0.6,rmHz:70,sub:0.2,biph:0.7,biphR:1.07,chaos:0.4,drive:0.4,vol:0.44,rev:0.5},
+             death:{f0:560,dur:0.55,f1:1400,f2:3000,slide:0.2,rough:0.35,rm:0.6,rmHz:66,sub:0.35,biph:0.6,chaos:0.7,drive:0.4,vol:0.44,rev:0.65} },
+  bomber:  { idle:{f0:260,dur:0.6,f1:800,f2:2000,slide:0.8,rough:0.45,rm:0.7,rmHz:80,sub:0.3,biph:0.45,chaos:0.6,drive:0.5,vol:0.26,rev:0.45},
+             pain:{f0:520,dur:0.24,f1:1100,f2:2500,slide:0.8,rough:0.5,rm:0.75,rmHz:95,sub:0.25,biph:0.5,chaos:0.6,drive:0.6,vol:0.46,rev:0.4},
+             attack:{f0:600,dur:0.4,f1:1200,f2:2800,slide:1.5,rough:0.6,rm:0.85,rmHz:120,sub:0.2,biph:0.6,chaos:0.85,drive:0.75,vol:0.56,rev:0.4},  // frantic rising shriek before it blows
+             death:{f0:480,dur:0.4,f1:1000,f2:2300,slide:0.3,rough:0.5,rm:0.7,rmHz:80,sub:0.3,biph:0.5,chaos:0.85,drive:0.65,vol:0.5,rev:0.5} },
+  screamer:{ idle:{f0:600,dur:0.8,f1:1400,f2:3200,slide:0.85,rough:0.5,rm:0.7,rmHz:90,sub:0.2,biph:0.6,biphR:1.41,chaos:0.55,drive:0.55,vol:0.3,rev:0.55,md:11},
+             pain:{f0:820,dur:0.28,f1:1700,f2:3600,slide:0.8,rough:0.6,rm:0.8,rmHz:120,sub:0.2,biph:0.6,chaos:0.7,drive:0.7,vol:0.5,rev:0.5},
+             attack:{f0:760,dur:0.55,f1:1600,f2:3500,slide:0.5,rough:0.65,rm:0.9,rmHz:130,sub:0.3,biph:0.65,biphR:1.41,chaos:0.8,drive:0.85,vol:0.62,rev:0.55,md:14},  // THE scream — piercing
+             death:{f0:680,dur:0.7,f1:1300,f2:2900,slide:0.18,rough:0.55,rm:0.75,rmHz:90,sub:0.4,biph:0.6,chaos:0.85,drive:0.7,vol:0.56,rev:0.7} },
+  warden:  { idle:{f0:100,dur:1.3,f1:340,f2:820,slide:0.65,rough:0.25,rm:0.6,rmHz:34,sub:0.85,biph:0.25,biphR:1.5,chaos:0.3,drive:0.45,vol:0.34,rev:0.65,md:12},
+             pain:{f0:200,dur:0.4,f1:500,f2:1100,slide:0.6,rough:0.35,rm:0.65,rmHz:40,sub:0.75,biph:0.3,chaos:0.5,drive:0.6,vol:0.56,rev:0.55},
+             attack:{f0:150,dur:0.45,f1:420,f2:1000,slide:0.78,rough:0.35,rm:0.78,rmHz:46,sub:0.85,biph:0.3,chaos:0.55,drive:0.72,vol:0.6,rev:0.5,md:13},
+             death:{f0:130,dur:1.0,f1:360,f2:820,slide:0.16,rough:0.3,rm:0.6,rmHz:34,sub:0.9,biph:0.3,chaos:0.75,drive:0.6,vol:0.58,rev:0.75} },
+  // ---- BOSSES: bigger, audible from farther (they loom) ----
+  boss:    { idle:{f0:85,dur:1.8,f1:300,f2:700,slide:0.7,rough:0.2,rm:0.6,rmHz:30,sub:0.95,biph:0.25,biphR:1.5,chaos:0.3,drive:0.5,vol:0.42,rev:0.75,md:16},
+             pain:{f0:170,dur:0.55,f1:420,f2:950,slide:0.6,rough:0.3,rm:0.65,rmHz:38,sub:0.85,biph:0.35,chaos:0.5,drive:0.65,vol:0.66,rev:0.6,md:16},
+             attack:{f0:120,dur:0.6,f1:360,f2:820,slide:0.72,rough:0.3,rm:0.78,rmHz:40,sub:0.9,biph:0.35,chaos:0.55,drive:0.75,vol:0.72,rev:0.6,md:18},
+             death:{f0:95,dur:1.6,f1:300,f2:700,slide:0.14,rough:0.25,rm:0.6,rmHz:30,sub:0.98,biph:0.4,chaos:0.8,drive:0.65,vol:0.72,rev:0.85,md:20} },
+  subzero: { idle:{f0:130,dur:1.5,f1:500,f2:1600,slide:0.8,rough:0.2,rm:0.55,rmHz:34,sub:0.7,biph:0.6,biphR:1.19,chaos:0.3,drive:0.4,vol:0.4,rev:0.7,md:15},  // cold, metallic dissonance
+             pain:{f0:280,dur:0.5,f1:700,f2:1900,slide:0.6,rough:0.35,rm:0.6,rmHz:48,sub:0.6,biph:0.6,chaos:0.5,drive:0.6,vol:0.64,rev:0.55,md:15},
+             attack:{f0:200,dur:0.55,f1:600,f2:1800,slide:0.7,rough:0.35,rm:0.8,rmHz:52,sub:0.7,biph:0.6,biphR:1.19,chaos:0.6,drive:0.72,vol:0.7,rev:0.55,md:17},
+             death:{f0:170,dur:1.4,f1:520,f2:1500,slide:0.14,rough:0.3,rm:0.6,rmHz:40,sub:0.85,biph:0.55,chaos:0.8,drive:0.6,vol:0.7,rev:0.8,md:18} },
+  leviathan:{ idle:{f0:60,dur:2.2,f1:240,f2:620,slide:0.7,rough:0.2,rm:0.6,rmHz:30,sub:0.98,biph:0.4,biphR:1.33,chaos:0.35,drive:0.45,vol:0.46,rev:0.9,md:16},  // vast wet subterranean bellow
+             pain:{f0:140,dur:0.6,f1:360,f2:900,slide:0.6,rough:0.3,rm:0.6,rmHz:34,sub:0.9,biph:0.4,chaos:0.55,drive:0.6,vol:0.68,rev:0.7,md:16},
+             attack:{f0:90,dur:0.8,f1:300,f2:780,slide:0.72,rough:0.3,rm:0.8,rmHz:34,sub:0.98,biph:0.4,biphR:1.33,chaos:0.6,drive:0.78,vol:0.74,rev:0.7,md:18},
+             death:{f0:65,dur:2.0,f1:260,f2:640,slide:0.12,rough:0.25,rm:0.6,rmHz:30,sub:0.99,biph:0.45,chaos:0.85,drive:0.65,vol:0.74,rev:0.95,md:22} },
+};
+VOX._default=VOX.basic;
+// dispatcher: positional, jittered, throttled by caller. kind ∈ idle|pain|attack|death
+function evox(e, kind){
+  if(!AC || !e) return;
+  const prof=VOX[e.type]||VOX._default; const r=prof&&prof[kind]; if(!r) return;
+  const md=r.md||VOX_RANGE[kind]||12;
+  const m=posMix(e.x,e.y,md); if(m.g<0.04) return;          // inaudible past the radius
+  const jf=0.92+Math.random()*0.16, jd=0.9+Math.random()*0.2;
+  voice(Object.assign({}, r, {
+    f0:r.f0*jf, dur:r.dur*jd, pan:m.pan,
+    vol:(r.vol!=null?r.vol:0.5)*(0.25+0.75*m.g)            // swell with proximity, never fully silent when in range
+  }));
+}
+
 const SFX={
   pistol(){ snd('pistol', ()=>{ const j=0.9+Math.random()*0.2;   // per-shot variation
     crack({vol:0.5}); burst({dur:0.13*j,vol:0.7,lp:4200,hp:150,curve:2.6,rev:0.3});
@@ -3549,20 +4332,27 @@ const SFX={
   pistolDry(){ tone({freq:2000,type:'square',dur:0.03,vol:0.12}); },
   hit(wx,wy){ const m=posMix(wx,wy,14); noise({dur:0.1,vol:0.55*m.g+0.2,pan:m.pan,lp:1500}); },
   shriek(wx,wy){ snd('shriek', ()=>{ const m=posMix(wx,wy,16); if(m.g<0.03)return;
-    voice({f0:500+Math.random()*120,dur:0.6,vol:0.5*m.g+0.08,pan:m.pan,f1:900,f2:2200,slide:0.4,rough:0.4,rev:0.4}); }, wx, wy); },
+    // high, breaking scream: strong roughness + biphonation + chaos breakdown
+    voice({f0:520+Math.random()*160,dur:0.65,vol:0.5*m.g+0.08,pan:m.pan,f1:950,f2:2400,slide:0.33,
+           rough:0.45,rm:0.7,rmHz:55+Math.random()*50,sub:0.45,biph:0.5,biphR:1.41,chaos:0.5,drive:0.55,rev:0.72}); }, wx, wy); },
   moan(wx,wy){ snd('moan', ()=>{ const m=posMix(wx,wy,11); if(m.g<0.02)return;
-    voice({f0:110+Math.random()*40,dur:0.8+Math.random()*0.5,vol:0.32*m.g,pan:m.pan,f1:400,f2:900,slide:0.7,rough:0.2,rev:0.3}); }, wx, wy); },
+    // low, wet growl-moan: deep subharmonic, slow heavy roughness, long collapse
+    voice({f0:115+Math.random()*45,dur:0.9+Math.random()*0.5,vol:0.34*m.g,pan:m.pan,f1:380,f2:850,slide:0.6,
+           rough:0.3,rm:0.6,rmHz:34+Math.random()*22,sub:0.75,biph:0.25,biphR:1.5,chaos:0.3,drive:0.35,rev:0.6}); }, wx, wy); },
   // ---- creepy ambient vocalizations ----
   // a distant laugh — deliberately quiet and hard-panned so it feels far off and
   // un-findable. Randomized pan/pitch each time.
-  distantLaugh(){ const pan=Math.random()*2-1; const base=180+Math.random()*120;
+  distantLaugh(){ const pan=Math.random()*2-1; const base=150+Math.random()*90;
+    // a broken, inharmonic laugh — short falling voiced bursts, wet with reverb (far off)
     for(let i=0;i<4+((Math.random()*3)|0);i++){ setTimeout(()=>{
-      tone({freq:base*(0.9+Math.random()*0.3),type:'sawtooth',dur:0.12,vol:0.09,pan:pan,slideTo:base*0.7,attack:0.005});
-    }, i*130); } },
+      voice({f0:base*(0.9+Math.random()*0.35),dur:0.13,vol:0.1,pan:pan,f1:500,f2:1300,slide:0.6,
+             rough:0.4,rm:0.6,rmHz:45+Math.random()*35,sub:0.55,biph:0.45,biphR:1.41,chaos:0.55,drive:0.4,rev:0.75});
+    }, i*135); } },
   // a long far-off wail — mournful, sourceless
   distantWail(){ const pan=Math.random()*2-1;
-    tone({freq:260+Math.random()*80,type:'sawtooth',dur:1.6+Math.random(),vol:0.08,pan:pan,slideTo:150,attack:0.4});
-    tone({freq:390,type:'sine',dur:1.4,vol:0.04,pan:pan,slideTo:220,attack:0.4}); },
+    // far, sourceless wail — inharmonic biphonation + slow roughness, long fall
+    voice({f0:250+Math.random()*90,dur:1.7+Math.random()*0.8,vol:0.11,pan:pan,f1:600,f2:1500,slide:0.55,
+           rough:0.25,rm:0.5,rmHz:30+Math.random()*16,sub:0.5,biph:0.6,biphR:1.33,chaos:0.2,drive:0.2,rev:0.85}); },
   // muttering / gibbering whispers, close-ish, unsettling
   whisper(wx,wy){ const m=posMix(wx,wy,9); if(m.g<0.03)return;
     for(let i=0;i<3;i++) setTimeout(()=>noise({dur:0.08,vol:0.06*m.g,pan:m.pan,lp:1800,hp:600}), i*110); },
@@ -3572,19 +4362,28 @@ const SFX={
   // ---- RABID: continuous chaos when they see you ----
   // a ragged screaming shout, layered and harsh — spammed while a patient chases
   rabidScream(wx,wy){ snd('scream', ()=>{ const m=posMix(wx,wy,14); if(m.g<0.04)return;
-    voice({f0:400+Math.random()*280,dur:0.35+Math.random()*0.2,vol:0.42*m.g+0.06,pan:m.pan,f1:800,f2:1700,slide:0.55,rough:0.5,rev:0.25}); }, wx, wy); },
+    // frenzied attack scream — max chaos + harsh drive, short and ragged
+    voice({f0:430+Math.random()*300,dur:0.38+Math.random()*0.2,vol:0.44*m.g+0.06,pan:m.pan,f1:820,f2:1800,slide:0.5,
+           rough:0.55,rm:0.8,rmHz:60+Math.random()*70,sub:0.4,biph:0.55,biphR:1.38,chaos:0.65,drive:0.7,rev:0.55}); }, wx, wy); },
   // frenzied gibbering shout (variation, so it's not one repeated sound)
   rabidShout(wx,wy){ const m=posMix(wx,wy,14); if(m.g<0.04)return;
+    // ragged staccato gibbering — short broken voice bursts, NOT tonal beeps
     for(let i=0;i<2+((Math.random()*2)|0);i++) setTimeout(()=>{
-      tone({freq:300+Math.random()*400,type:'sawtooth',dur:0.1,vol:0.28*m.g+0.04,pan:m.pan,slideTo:200,attack:0.005});
-    }, i*90); },
-  attack(wx,wy){ const m=posMix(wx,wy,10);
-    tone({freq:300,type:'square',dur:0.2,vol:0.5*m.g+0.1,pan:m.pan,slideTo:900}); },
+      voice({f0:260+Math.random()*260,dur:0.12+Math.random()*0.08,vol:0.3*m.g+0.04,pan:m.pan,f1:700,f2:1700,slide:0.55,
+             rough:0.5,rm:0.8,rmHz:70+Math.random()*60,sub:0.4,biph:0.5,biphR:1.37,chaos:0.75,drive:0.7,rev:0.4});
+    }, i*95); },
+  attack(wx,wy){ const m=posMix(wx,wy,10); if(m.g<0.03)return;
+    // guttural lunge snarl — short, rising-then-breaking, heavy roughness + grit
+    voice({f0:240+Math.random()*120,dur:0.26,vol:0.5*m.g+0.1,pan:m.pan,f1:650,f2:1500,slide:0.75,
+           rough:0.4,rm:0.75,rmHz:70+Math.random()*60,sub:0.55,biph:0.4,biphR:1.44,chaos:0.55,drive:0.65,rev:0.4});
+    tone({freq:90,type:'square',dur:0.14,vol:0.3*m.g,pan:m.pan,slideTo:55}); },  // body-thud under the snarl
   playerHurt(){ tone({freq:200,type:'sawtooth',dur:0.28,vol:0.6,slideTo:80});
     noise({dur:0.22,vol:0.45,lp:800}); },
-  death(wx,wy){ snd('death', ()=>{ const m=posMix(wx,wy,14);
-    tone({freq:160,type:'sawtooth',dur:0.55,vol:0.5*m.g+0.1,pan:m.pan,slideTo:40});
-    noise({dur:0.45,vol:0.4*m.g,pan:m.pan,lp:900}); }, wx, wy); },
+  death(wx,wy){ snd('death', ()=>{ const m=posMix(wx,wy,14); if(m.g<0.03)return;
+    // wet collapsing gurgle — deep falling pitch into chaos breakdown, long tail
+    voice({f0:230+Math.random()*80,dur:0.7,vol:0.5*m.g+0.1,pan:m.pan,f1:500,f2:1100,slide:0.22,
+           rough:0.35,rm:0.65,rmHz:38+Math.random()*30,sub:0.7,biph:0.35,biphR:1.5,chaos:0.7,drive:0.5,rev:0.68});
+    noise({dur:0.5,vol:0.38*m.g,pan:m.pan,lp:800,hp:120}); }, wx, wy); },
   win(){ [0,4,7,12].forEach((s,i)=>setTimeout(()=>tone({freq:220*Math.pow(2,s/12),type:'triangle',dur:0.35,vol:0.4}),i*140)); },
   lose(){ tone({freq:300,type:'sawtooth',dur:1.3,vol:0.55,slideTo:40}); },
   pickup(){ tone({freq:660,type:'triangle',dur:0.12,vol:0.35}); tone({freq:990,type:'triangle',dur:0.18,vol:0.25}); },
@@ -3658,14 +4457,20 @@ function updateAmbientSound(dt){
   if(bangClock<=0){ bangClock=7+Math.random()*12;
     SFX.distantBang(); }
 
-  // 2. idle vocals — dormant patients near the player moan or mutter
+  // 2. idle vocals — each enemy's OWN idle voice, swelling as you approach and
+  // inaudible from across the map (evox applies positional volume + per-type range).
+  // We pick the nearest non-aggro enemy inside its idle radius so you hear what's
+  // lurking nearby, not a map-wide chorus.
   moanClock-=dt;
-  if(moanClock<=0){ moanClock=1.4+Math.random()*2.2;
+  if(moanClock<=0){ moanClock=1.3+Math.random()*2.0;
     let near=null,nd=99;
     for(const e of enemies){ if(e.state==='dead')continue;
-      if(e.state!=='dormant'&&e.state!=='search')continue;
+      if(e.state==='chase'||e.state==='attack'||e.state==='alert')continue;   // those use the rabid layer
       const d=Math.hypot(e.x-P.x,e.y-P.y); if(d<nd){nd=d;near=e;} }
-    if(near && nd<11){ if(Math.random()<0.5) SFX.moan(near.x,near.y); else SFX.whisper(near.x,near.y); }
+    if(near && nd<9){
+      if(Math.random()<0.78) evox(near,'idle');            // the enemy's own idle sound
+      else SFX.whisper(near.x,near.y);                      // occasional muttering for texture
+    }
   }
 
   // 3. rabid chaos — chasing patients scream, but EACH enemy has its own cooldown
@@ -4622,7 +5427,7 @@ const MP = {
       else { const h='t:'+modeName; if(H.mode!==h){ H.mode=h; mn.textContent=modeName; } } }
     const rem=Object.values(this.players), n=1+rem.length;
     const stat=document.getElementById('lob_status');
-    if(stat) stat.textContent = this.roomRef ? ('LOBBY \u00b7 '+n+' in room'+(n<2?' \u00b7 searching\u2026':'')) : 'LOBBY \u00b7 solo (offline)';
+    if(stat) stat.textContent = this.roomRef ? ('LOBBY \u00b7 '+n+' in room \u00b7 #'+String(this.roomId||'').slice(-5)+' \u00b7 '+(this.host?'HOST':'JOINED')+(n<2?' \u00b7 searching\u2026':'')) : 'LOBBY \u00b7 solo (offline)';
     const mkRow=(nm,rd,me)=>'<div style="display:flex;justify-content:space-between;gap:16px;color:'+(me?'#fd6':'#ddd')+'"><span>'+nm+'</span><span style="color:'+(rd?'#4d7':'#555')+'">'+(rd?'\u2713':'\u00b7')+'</span></div>';
     const rost=document.getElementById('lob_rosters');
     if(rost){ let rh;
