@@ -472,7 +472,7 @@ function loadLevel(i){
   grid=[]; meta={start:[3.5,7.5],keys:[],exit:null,shortcuts:[],doors:[]}; ZWINDOW=new Set();
   for(let y=0;y<MH;y++){const r=[];for(let x=0;x<MW;x++){const ch=MAP[y][x];
     if(ch==='#')r.push(1); else if(ch==='T')r.push(4); else if(ch==='B')r.push(5); else if(ch==='C')r.push(6); else if(ch==='N'){r.push(7); ZWINDOW.add(x+','+y);}
-    else if(ch==='D'){ r.push(8); meta.doors.push([x,y]); }   // closed door — solid until opened with F
+    else if(ch==='D'){ r.push(0); }   // doors removed entirely — a 'D' cell is just open floor now
     else {r.push(0);
       if(ch==='S')meta.start=[x+0.5,y+0.5];
       if(ch==='K')meta.keys.push([x+0.5,y+0.5]);
@@ -2666,7 +2666,10 @@ const GUNS={
     ]},
 };
 function drawMinimap(){
-  const cell=2.2, pad=6, mw=MW*cell, mh=MH*cell;
+  // Fit the map into a fixed box so a big level (e.g. Floor 6, 74x46) doesn't blow
+  // up the minimap. cell scales to the largest dimension, capped so small maps stay sane.
+  const BOX=86, pad=6;
+  const cell=Math.min(1.9, BOX/MW, BOX/MH), mw=MW*cell, mh=MH*cell;
   const ox=W-mw-pad, oy=pad;
   ctx.save();
   ctx.globalAlpha=0.78;
@@ -5300,25 +5303,33 @@ const EMBED_IDS=['aud_track1','aud_track2','aud_track3','aud_track4'];  // fallb
 const MENU_ID='aud_track4';
 let MUSIC_VOL=0.6;
 let bgm=null, menuMusic=null, musicMode='none';
-let _bag=[], _usingEmbed=false, _embedIdx=0;
+let _bag=[], _embedIdx=0;
 function _reshuffle(){ _bag=MUSIC_FILES.map((_,i)=>i);
   for(let i=_bag.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;const t=_bag[i];_bag[i]=_bag[j];_bag[j]=t;} }
 function _nextRandom(){ if(_bag.length===0)_reshuffle(); return _bag.pop(); }
 function _bgmEl(){ if(bgm)return bgm; bgm=document.getElementById('bgm');
   if(!bgm){ bgm=document.createElement('audio'); bgm.id='bgm'; bgm.preload='auto'; document.body.appendChild(bgm); } return bgm; }
-function _playEmbed(){ _usingEmbed=true; const el=document.getElementById(EMBED_IDS[_embedIdx%EMBED_IDS.length]);
-  if(!el)return; el.loop=false; el.volume=MUSIC_VOL; el.currentTime=0;
-  el.onended=()=>{ if(musicMode==='game'){ _embedIdx++; _playEmbed(); } };
-  el.play().catch(()=>{}); }
+function _musicNote(txt){ try{ console.log('[music] '+txt);
+  let el=document.getElementById('musicnote');
+  if(!el){ el=document.createElement('div'); el.id='musicnote';
+    el.style.cssText='position:absolute;left:8px;bottom:8px;z-index:50;font:11px monospace;color:#7a6;letter-spacing:1px;opacity:0;transition:opacity .4s;pointer-events:none;text-shadow:0 0 3px #000'; document.body.appendChild(el); }
+  el.textContent='♪ '+txt; el.style.opacity='0.85';
+  clearTimeout(el._t); el._t=setTimeout(()=>{el.style.opacity='0';},3500);
+  }catch(e){} }
 function _playRandom(){
-  if(_usingEmbed){ _playEmbed(); return; }
   const a=_bgmEl(), f=MUSIC_FILES[_nextRandom()];
   a.loop=false; a.volume=MUSIC_VOL;
   a.onended=()=>{ if(musicMode==='game') _playRandom(); };
-  a.onerror=()=>{ if(!_usingEmbed){ _usingEmbed=true; _embedIdx=0; _playEmbed(); } };  // folder missing → embedded
+  // transient-safe fallback: play an embedded track for THIS slot, but DON'T lock
+  // embedded for the session — the next level retries the external folder again.
+  a.onerror=()=>{ _musicNote('EMBEDDED (music/ not found over '+location.protocol+')'); _embedOnce(); };
   a.src=MUSIC_BASE+f; a.currentTime=0;
-  a.play().catch(()=>{});
+  a.play().then(()=>_musicNote(f)).catch(()=>{});
 }
+function _embedOnce(){ const el=document.getElementById(EMBED_IDS[_embedIdx++%EMBED_IDS.length]);
+  if(!el)return; el.loop=false; el.volume=MUSIC_VOL; el.currentTime=0;
+  el.onended=()=>{ if(musicMode==='game') _playRandom(); };   // next level/track tries external again
+  el.play().catch(()=>{}); }
 function startMenuMusic(){
   if(musicMode==='menu') return;
   stopAllMusic(); musicMode='menu';
