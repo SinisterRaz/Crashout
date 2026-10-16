@@ -192,6 +192,7 @@
       <button class="lvlsel" data-lvl="3">FLOOR 4 — CONTAINMENT</button>
       <button class="lvlsel" data-lvl="4">FLOOR 5 — THE SUMP</button>
       <button class="lvlsel" data-lvl="5">FLOOR 6 — THE CHAPEL</button>
+      <button class="lvlsel" data-lvl="6">FLOOR 7 — THE BREACH</button>
     </div>
     <p class="story">Cell 9, Blackhills Asylum. They say John Falcon lost his mind.</p>
     <p class="story">They're wrong. I don't belong in here — and I'm walking out.</p>
@@ -295,7 +296,7 @@ let MAP=[], MH=0, MW=0, grid=[], meta={start:[3.5,7.5],keys:[],exit:null};
 let ZWINDOW=new Set();   // window/breach cells: SOLID to the player, PASSABLE to zombies (off-map spawn entries)
 let ZINSIDE=new Set();   // largest connected floor region = playable interior (off-map pockets excluded)
 let keysGot=[], keyCount=0;
-let PROPS=[], LIGHTS=[], enemies=[], PICKUPS=[], HAZARDS=[];
+let PROPS=[], LIGHTS=[], enemies=[], PICKUPS=[], HAZARDS=[], TRAPS=[];
 let DRAW_DIST=12;   // fog-matched hard draw distance; set each frame in render()
 let FOGCOL=[10,13,11], TEX=null, levelIdx=0, DARKNESS=0;
 const wallBlood={};    // "mx,my,side" -> splatter seed, painted on that wall face (persists across the session)
@@ -502,6 +503,8 @@ function loadLevel(i){
   PICKUPS=(L.pickups?L.pickups():[]);
   enemies=(L.enemies?L.enemies():[]);
   HAZARDS=(L.hazards?L.hazards():[]);
+  TRAPS=(L.traps?L.traps():[]).map(t=>({...t,state:'armed',t:0,cd:0,warned:false}));
+  SEVERED=[];
   for(const lt of LIGHTS) lt._vis=computeVis(lt.x,lt.y,lt.r);
   for(const h of HAZARDS) h._vis=computeVis(h.x,h.y,(h.r||1)+2.5);
   FOGCOL=L.fog||[10,13,11];
@@ -802,6 +805,24 @@ function makeTex(kind){const S=64,data=new Uint8ClampedArray(S*S*3);
       const region=(((x/cl)|0)+((y/cl)|0)*2)%4, cols=[[120,30,30],[30,50,110],[150,120,30],[30,90,60]];
       const c=cols[region], dim=0.42+R()*0.28; r=c[0]*dim;g=c[1]*dim;b=c[2]*dim;
       if(lead){r=18;g=18;b=20;} if(Math.sin(x*2.1+y*1.7)>0.92){r*=0.3;g*=0.3;b*=0.3;} }
+    else if(kind==='jaggedrock'){ let base=52+(R()*22-11);
+      const cr=Math.sin(x*0.4+y*0.7)+Math.sin(x*0.9-y*0.3);                 // fracture network
+      r=base*0.95;g=base*0.82;b=base*0.68;
+      if(cr>1.5){r*=0.45;g*=0.42;b*=0.4;}                                   // deep dark cracks
+      if(cr<-1.6){r*=1.15;g*=1.05;b*=0.92;}                                 // raised faces catch light
+      if(R()<0.04){r*=1.2;g*=1.1;b*=0.95;} }                               // mineral flecks
+    else if(kind==='lavaseam'){ let base=40+(R()*16-8); r=base*0.9;g=base*0.72;b=base*0.6;
+      const seam=Math.sin(x*0.5+Math.sin(y*0.3)*2)+Math.sin(y*0.7);        // molten cracks glowing from below
+      if(seam>1.78){ r=255;g=130+R()*60;b=36; }                            // bright lava core
+      else if(seam>1.5){ r=206;g=74;b=22; }                                // cooling glow edge
+      else if(R()<0.02){r*=0.6;g*=0.55;b*=0.5;} }
+    else if(kind==='bonewall'){ const bw=20,bh=22,bx=x%bw,by=y%bh;
+      let base=46+(R()*14-7); r=base*0.82;g=base*0.78;b=base*0.68;         // dark rock matrix
+      const sx=bx-10,sy=by-9, sk=(sx*sx)/40+(sy*sy)/30;
+      if(sk<1){ r=184;g=176;b=150;                                         // embedded skull
+        if((sx*sx)/8+((sy+3)*(sy+3))/6<1){r=38;g=34;b=30;} }               // eye sockets
+      else if(Math.abs(Math.sin(by*0.9))>0.85 && bx<bw*0.5){ r=150;g=144;b=122; }  // rib streaks
+      if(R()<0.015){r*=0.6;g*=0.6;b*=0.55;} }
     else{const base=90+(R()*24-12);r=g=b=base;}
     put(x,y,r,g,b);}
   return {w:S,h:S,data};}
@@ -863,12 +884,15 @@ const ETYPES={
   shepherd:{hp:380, mass:0.98, chase:1.8, sightRange:15, dmg:30, sz:1.55, tint:[70,64,78], shape:'human',
     dmgMult:{bullet:0.8,pellet:0.9,melee:0.8,explosive:1.3,fire:0.3}, boss:true},
   // PENITENT (Floor 6): hooded flagellant — slow, tanky, heavy melee. The flock's muscle.
-  penitent:{hp:85, mass:0.85, chase:1.35, sightRange:10, dmg:22, sz:1.15, tint:[60,55,66], shape:'tall',
+  penitent:{hp:85, mass:0.85, chase:1.35, sightRange:10, dmg:22, sz:1.15, tint:[60,55,66], shape:'penitent',
     dmgMult:{bullet:0.85,pellet:0.95,melee:0.9,explosive:1.4,fire:0.8}},
   // ACOLYTE (Floor 6): robed chanter — hangs back and lobs burning offerings at you.
-  acolyte:{hp:36, mass:0.4, chase:1.8, sightRange:14, dmg:6, sz:1.05, tint:[42,36,52], shape:'tall',
+  acolyte:{hp:36, mass:0.4, chase:1.8, sightRange:14, dmg:6, sz:1.05, tint:[42,36,52], shape:'acolyte',
     dmgMult:{bullet:1.15,pellet:1.05,melee:1.1,explosive:1.3,fire:1.1},
     ranged:true, projSpeed:5.5, projDmg:14, fireRange:11, keepDist:6, windUp:0.5, fireCd:1.8, projKind:'venom'},
+  // GAUNT (Floor 7): pale blind cave predator — very fast, fragile, lunging claw-stab.
+  leaper: {hp:20, mass:0.22, chase:3.7, sightRange:12, dmg:12, sz:1.15, tint:[150,140,130], shape:'stalker',
+    dmgMult:{bullet:1.3,pellet:1.25,melee:1.25,explosive:1.3,fire:1.2}},
   // LUNATIC: thin triangle, very fast, fragile. Glass-cannon panic charger.
   fast:   {hp:12, mass:0.2, chase:4.8, sightRange:13, dmg:8, sz:0.9, tint:[150,60,60], shape:'thin',
     dmgMult:{bullet:1.3,pellet:1.15,melee:1.25,explosive:1.3,fire:1}},
@@ -993,6 +1017,57 @@ function updateHazards(dt){
       else { const k=Math.min(1,P.burnT/BURN_LINGER);          // 1 in the fire → 0 as it goes out
         f.style.background='radial-gradient(circle,rgba(255,90,20,0.35),transparent 70%)';
         f.style.opacity=(0.12+0.45*k).toFixed(3); }
+    }
+  }
+}
+// ══ DEMONIC BOOBY TRAPS ════════════════════════════════════════════════════
+// Four evil traps for the hell floors (F7+): a summoning SIGIL (Gore-Nest style:
+// step near it and it tears demons out of the floor), a hellfire GEYSER on a
+// rhythm you must time, a bone IMPALER pressure-plate, and a grasping SNARE that
+// roots you while the horde closes. Each is a small state machine.
+function _summonAt(x,y,type){
+  if(solid(x,y)){ x=Math.round(x)+0.5; y=Math.round(y)+0.5; if(solid(x,y))return; }
+  const e=makeEnemy(x,y,type); e.state='alert'; e.t=0; e.tele=0.7;   // EMERGE first — a beat before it lunges
+  e.idle=false; e.idleMoving=false; e.confirm=0.5; e.lkx=P.x; e.lky=P.y; e.hitFlash=0.1; e._summoned=1;
+  enemies.push(e); emberBurst(x,y); emberBurst(x+0.3,y-0.2); emberBurst(x-0.3,y+0.2);
+}
+function updateTraps(dt){
+  for(const tr of TRAPS){
+    tr.t+=dt;
+    const d=Math.hypot(P.x-tr.x,P.y-tr.y);
+    if(tr.kind==='sigil'){
+      if(tr.state==='armed'){ if(d<(tr.arm||3.6)){ tr.state='telegraph'; tr.t=0;
+          SFX.distantBang&&SFX.distantBang(); flash&&flash('⛧ A SUMMONING ⛧',1000); shake=Math.min(1,shake+0.4); } }
+      else if(tr.state==='telegraph'){ shake=Math.min(1,shake+dt*0.6);
+        if(tr.t>2.0){ tr.state='active'; tr.t=0;                       // 2s warning — enough to back off
+          if(d<1.6) hurtPlayer(tr.dmg||8);                            // gentle burst, small radius
+          const types=tr.summon||['leaper','penitent','acolyte']; const n=tr.count||2;
+          for(let i=0;i<n;i++){ const a=(i/n)*6.28+Math.random()*0.8, rr=1.6+Math.random()*1.2;
+            let sx=tr.x+Math.cos(a)*rr, sy=tr.y+Math.sin(a)*rr;
+            const pd=Math.hypot(sx-P.x,sy-P.y);                         // never spawn in your lap
+            if(pd<3){ const pa=Math.atan2(sy-P.y,sx-P.x); sx=P.x+Math.cos(pa)*3.2; sy=P.y+Math.sin(pa)*3.2; }
+            _summonAt(sx,sy, types[(Math.random()*types.length)|0]); }
+          SFX.distantWail&&SFX.distantWail(); shake=Math.min(1.2,shake+0.6); } }
+      else if(tr.state==='active'){ if(tr.t>1.0) tr.state='spent'; }
+    }
+    else if(tr.kind==='firejet'){
+      const period=tr.period||4.2, win=tr.win||1.2, ph=tr.t%period;
+      tr.erupt=ph>(period-win); tr.tele=(ph>(period-win-0.8))&&!tr.erupt;
+      if(tr.erupt && d<(tr.r||1.3)){ hurtPlayer((tr.dps||42)*dt, true, true); P.burnT=BURN_LINGER;
+        if((tr.sfxT=(tr.sfxT||0)-dt)<=0){ tr.sfxT=0.4; SFX.hit&&SFX.hit(tr.x,tr.y); } }
+    }
+    else if(tr.kind==='spikes'){
+      if(tr.state==='armed'){ if(d<(tr.arm||0.95)){ tr.state='telegraph'; tr.t=0; SFX.hit&&SFX.hit(tr.x,tr.y); } }
+      else if(tr.state==='telegraph'){ if(tr.t>0.22){ tr.state='active'; tr.t=0;
+          if(d<1.15){ hurtPlayer(tr.dmg||46); shake=Math.min(1,shake+0.5); } } }
+      else if(tr.state==='active'){ if(tr.t>0.6) tr.state='spent'; }
+    }
+    else if(tr.kind==='snare'){
+      if(tr.state==='armed'){ if(d<(tr.arm||1.0)){ tr.state='active'; tr.t=0;
+          P.stunT=Math.max(P.stunT,tr.stun||1.5); hurtPlayer(tr.dmg||10);
+          SFX.hit&&SFX.hit(tr.x,tr.y); flash&&flash('GRASPED BY THE DAMNED',800); } }
+      else if(tr.state==='active'){ if(tr.t>(tr.stun||1.5)) tr.state='cooldown'; }
+      else if(tr.state==='cooldown'){ if(tr.t>(tr.recd||6)) tr.state='armed'; }
     }
   }
 }
@@ -1470,6 +1545,11 @@ const L4_PICKUPS=[
   {x:12,y:40,kind:'health',amt:30},
   {x:27,y:33,kind:'health',amt:35},
   {x:29,y:38,kind:'ammo',sub:'shells',amt:12},
+
+  {x:9,y:22,kind:'health',amt:30},
+  {x:22,y:18,kind:'health',amt:25},
+  {x:10,y:35,kind:'health',amt:35},
+  {x:25,y:35,kind:'health',amt:30},
 ];
 
 function L4_ENEMIES(){ return [
@@ -1598,6 +1678,11 @@ const L5_PICKUPS=[
   {x:18,y:38,kind:'health',amt:35},
   {x:24,y:40,kind:'ammo',sub:'shells',amt:12},
   {x:16,y:41,kind:'ammo',sub:'rifle',amt:16},
+
+  {x:9,y:19,kind:'health',amt:30},
+  {x:24,y:21,kind:'health',amt:25},
+  {x:25,y:5,kind:'health',amt:35},
+  {x:26,y:38,kind:'health',amt:30},
 ];
 
 const L5_HAZARDS=[
@@ -1843,6 +1928,12 @@ const L6_PICKUPS=[
   {x:22,y:60,kind:'ammo',sub:'rifle',amt:20},
   {x:28,y:63,kind:'health',amt:40},
   {x:16,y:68,kind:'health',amt:35},
+
+  {x:12,y:7,kind:'weapon',sub:'nail'},
+  {x:11,y:6,kind:'ammo',sub:'nails',amt:20},
+  {x:28,y:8,kind:'ammo',sub:'nails',amt:16},
+
+  {x:13,y:8,kind:'weapon',sub:'cleaver'},
 ];
 
 const L6_HAZARDS=[
@@ -1885,6 +1976,16 @@ LEVELS[5]={
   objective:'FIND BOTH KEYS',
   map:L6_MAP, props:L6_PROPS, lights:L6_LIGHTS,
   pickups:()=>L6_PICKUPS.slice(), enemies:L6_ENEMIES, hazards:()=>L6_HAZARDS.slice(),
+  traps:()=>[   // DEMONIC BOOBY TRAPS — the chapel's been desecrated into a summoning ground
+    {x:31,y:11,kind:'sigil',arm:3.4,count:3,summon:['acolyte','penitent']},    // nave ambush
+    {x:13,y:46,kind:'sigil',arm:3.2,count:2,summon:['penitent']},              // crypt
+    {x:24,y:66,kind:'sigil',arm:3.6,count:4,summon:['acolyte','penitent']},    // arena — before the Shepherd
+    {x:34,y:50,kind:'firejet',period:3.8,win:1.2,r:1.3,dps:44},                // bell stair geyser
+    {x:16,y:48,kind:'spikes',arm:0.95,dmg:46},                                 // crypt impaler
+    {x:30,y:33,kind:'spikes',arm:0.95,dmg:46},                                 // sacristy impaler
+    {x:11,y:29,kind:'snare',arm:1.0,stun:1.5,dmg:10},                          // confessional snare
+    {x:20,y:63,kind:'snare',arm:1.0,stun:1.6,dmg:12},                          // arena snare
+  ],
   fog:[9,7,12], darkness:0.42,
   wallblood:['24,8,0','30,14,1','13,30,0','26,35,1','15,50,0','24,62,1','16,61,0','32,61,1'],
   decals:()=>({
@@ -1893,6 +1994,225 @@ LEVELS[5]={
     '38,60,1':'graf_scrawl','24,57,0':'stain',
   }),
   tex:()=>({1:makeTex('chapelstone'),4:makeTex('scripture'),5:makeTex('stainedglass'),6:makeTex('crypt')}),
+};
+
+// ═════════ FLOOR 7 — THE BREACH (caverns) ═════════
+const L7_MAP=[
+"################################################",
+"################################################",
+"################################################",
+"######..........################################",
+"######..........################################",
+"######..........################################",
+"######..S.......####.......................#####",
+"######..........####.......................#####",
+"######..........####....................B..#####",
+"######..........####..................#.B..#####",
+"#############.######......#.............B..#####",
+"#############.######....................B..#####",
+"#############.######...#............K...B..#####",
+"#############...................#.......B..#####",
+"####################....................B..#####",
+"####################....................B..#####",
+"####################....................B..#####",
+"####################.........#..........B..#####",
+"####################....................B..#####",
+"####################...............#....B..#####",
+"####################..BB.BB.BB.BB.......B..#####",
+"####################.......................#####",
+"####################.......................#####",
+"######################.#########################",
+"######################.#########################",
+"######################.#########################",
+"######.................#########################",
+"######...............###########################",
+"######...........#...###########################",
+"######....#..........###########################",
+"######...............###.................#######",
+"######...............###.................#######",
+"######........#........#.................#######",
+"######...............#......#........#...#######",
+"######...............###.................#######",
+"######...............###.................#######",
+"######...............###.........#.......#######",
+"########################.................#######",
+"########################.................#######",
+"########################.................#######",
+"########################.................#######",
+"##############################.#################",
+"##############################.#################",
+"#######........................#################",
+"#######.................B#######################",
+"#######.................B#######################",
+"#######.................B#####............######",
+"#######....#.........#..B#####............######",
+"#######.................B#####............######",
+"#######.................B#####............######",
+"#######.....K...........B#####............######",
+"#######.........#.......B#####............######",
+"#######...................................######",
+"#######......#.....#....B#####............######",
+"#######.................B#####............######",
+"#######...BB.BB.BB.BB.BBB#####............######",
+"#######..................#####............######",
+"##############################............######",
+"##############################............######",
+"##################################.#############",
+"##################################.#############",
+"##################################.#############",
+"##########...............................#######",
+"##########B.........#....................#######",
+"##########B.............................B#######",
+"##########B...................#..........#######",
+"##########B.....#.......................B#######",
+"##########B..............................#######",
+"##########B.............................B#######",
+"##########B............#.................#######",
+"##########B........................#....B#######",
+"##########B..............................#######",
+"##########B..............E..#...........B#######",
+"##########B..............................#######",
+"##########...............................#######",
+"################################################",
+"################################################",
+"################################################",
+"################################################",
+"################################################"];
+
+const L7_PROPS=[
+  {x:10,y:5,kind:'boulder'},
+  {x:13,y:8,kind:'stalagmite'},
+  {x:24,y:9,kind:'stalagmite'},
+  {x:30,y:13,kind:'boulder'},
+  {x:38,y:10,kind:'stalagmite'},
+  {x:27,y:18,kind:'lavarock'},
+  {x:35,y:20,kind:'stalagmite'},
+  {x:23,y:16,kind:'bonepile'},
+  {x:8,y:28,kind:'bonepile'},
+  {x:12,y:31,kind:'stalagmite'},
+  {x:18,y:34,kind:'boulder'},
+  {x:10,y:35,kind:'bonepile'},
+  {x:26,y:32,kind:'stalagmite'},
+  {x:34,y:35,kind:'boulder'},
+  {x:38,y:38,kind:'lavarock'},
+  {x:29,y:39,kind:'bonepile'},
+  {x:9,y:45,kind:'stalagmite'},
+  {x:14,y:48,kind:'boulder'},
+  {x:20,y:45,kind:'stalagmite'},
+  {x:12,y:54,kind:'bonepile'},
+  {x:18,y:52,kind:'lavarock'},
+  {x:22,y:50,kind:'stalagmite'},
+  {x:32,y:48,kind:'stalagmite'},
+  {x:37,y:52,kind:'boulder'},
+  {x:34,y:56,kind:'bonepile'},
+  {x:39,y:50,kind:'stalagmite'},
+  {x:14,y:64,kind:'stalagmite'},
+  {x:20,y:67,kind:'boulder'},
+  {x:26,y:64,kind:'lavarock'},
+  {x:32,y:67,kind:'stalagmite'},
+  {x:37,y:71,kind:'boulder'},
+  {x:18,y:71,kind:'bonepile'},
+  {x:30,y:72,kind:'bonepile'},
+  {x:31,y:11,kind:'sigil'},
+  {x:13,y:48,kind:'sigil'},
+  {x:24,y:68,kind:'sigil'},
+  {x:28,y:15,kind:'gore'},
+  {x:11,y:33,kind:'gore'},
+  {x:33,y:37,kind:'gore'},
+  {x:16,y:52,kind:'gore'},
+  {x:35,y:55,kind:'gore'},
+  {x:22,y:69,kind:'gore'},
+  {x:26,y:9,kind:'gore'},
+  {x:15,y:46,kind:'gore'},
+  {x:30,y:70,kind:'gore'},
+];
+
+const L7_LIGHTS=[
+  {x:9,y:6,r:4,i:0.40,flicker:true},
+  {x:30,y:12,r:6,i:0.50},
+  {x:39,y:15,r:5,i:0.60,flicker:true},
+  {x:27,y:18,r:4,i:0.50,flicker:true},
+  {x:10,y:30,r:4,i:0.40},
+  {x:17,y:33,r:3,i:0.35,flicker:true},
+  {x:30,y:35,r:4,i:0.45},
+  {x:38,y:38,r:4,i:0.55,flicker:true},
+  {x:12,y:48,r:5,i:0.45},
+  {x:20,y:52,r:4,i:0.50,flicker:true},
+  {x:16,y:46,r:3,i:0.35,flicker:true},
+  {x:34,y:52,r:4,i:0.45},
+  {x:38,y:55,r:4,i:0.50,flicker:true},
+  {x:24,y:68,r:7,i:0.60},
+  {x:16,y:65,r:4,i:0.45,flicker:true},
+  {x:34,y:68,r:4,i:0.45,flicker:true},
+  {x:25,y:73,r:5,i:0.90},
+];
+
+const L7_PICKUPS=[
+  {x:10,y:7,kind:'ammo',sub:'pistol',amt:18},
+  {x:13,y:7,kind:'health',amt:30},
+  {x:34,y:9,kind:'weapon',sub:'mg'},
+  {x:33,y:10,kind:'ammo',sub:'mg',amt:60},
+  {x:28,y:17,kind:'health',amt:35},
+  {x:14,y:30,kind:'ammo',sub:'shells',amt:14},
+  {x:10,y:35,kind:'health',amt:30},
+  {x:30,y:34,kind:'ammo',sub:'mg',amt:50},
+  {x:26,y:38,kind:'health',amt:35},
+  {x:12,y:46,kind:'ammo',sub:'rifle',amt:16},
+  {x:18,y:50,kind:'health',amt:40},
+  {x:21,y:54,kind:'ammo',sub:'mg',amt:40},
+  {x:9,y:53,kind:'health',amt:30},
+  {x:34,y:50,kind:'ammo',sub:'shells',amt:14},
+  {x:38,y:55,kind:'health',amt:30},
+  {x:18,y:66,kind:'health',amt:45},
+  {x:30,y:66,kind:'ammo',sub:'mg',amt:60},
+  {x:23,y:64,kind:'ammo',sub:'rifle',amt:20},
+  {x:33,y:70,kind:'health',amt:40},
+  {x:16,y:72,kind:'health',amt:35},
+];
+
+const L7_HAZARDS=[
+  {x:27,y:18,r:1.2,dps:20,fuel:'lava'},
+  {x:38,y:38,r:1.1,dps:20,fuel:'lava'},
+  {x:18,y:52,r:1.2,dps:20,fuel:'lava'},
+  {x:26,y:64,r:1.1,dps:20,fuel:'lava'},
+];
+
+function L7_TRAPS(){ return [
+  {x:31,y:11,kind:'sigil',arm:3.2,count:2,summon:["leaper", "basic"]},
+  {x:24,y:68,kind:'sigil',arm:3.4,count:2,summon:["leaper", "fast"]},
+  {x:16,y:33,kind:'firejet',period:4.0,win:1.1,r:1.3,dps:40},
+  {x:33,y:37,kind:'spikes',arm:0.95,dmg:42},
+  {x:12,y:30,kind:'snare',arm:1.0,stun:1.4,dmg:10},
+]; }
+
+function L7_ENEMIES(){ return [
+  makeEnemy(30,10,'leaper'),
+  makeEnemy(26,14,'basic'),
+  makeEnemy(39,12,'fast'),
+  makeEnemy(9,28,'leaper'),
+  makeEnemy(14,33,'breacher'),
+  makeEnemy(28,32,'leaper'),
+  makeEnemy(31,38,'basic'),
+  makeEnemy(11,46,'leaper'),
+  makeEnemy(17,50,'breacher'),
+  makeEnemy(21,46,'crawler'),
+  makeEnemy(34,49,'leaper'),
+  makeEnemy(32,56,'fast'),
+  makeEnemy(16,65,'leaper'),
+  makeEnemy(30,66,'basic'),
+  makeEnemy(23,70,'breacher'),
+  makeEnemy(35,68,'fast'),
+]; }
+
+
+LEVELS[6]={
+  name:'FLOOR 7 — THE BREACH',
+  objective:'FIND BOTH KEYS',
+  map:L7_MAP, props:L7_PROPS, lights:L7_LIGHTS,
+  pickups:()=>L7_PICKUPS.slice(), enemies:L7_ENEMIES, hazards:()=>L7_HAZARDS.slice(),
+  traps:L7_TRAPS,
+  fog:[12,7,5], darkness:0.40,
+  tex:()=>({1:makeTex('jaggedrock'),4:makeTex('bonewall'),5:makeTex('lavaseam')}),
 };
 
 
@@ -1912,11 +2232,13 @@ const WEAPONS={
   uzi:    {name:'UZI',     type:'hitscan', dmg:8,  cooldown:0.1, range:14, ammoType:'smg',    noise:8, slot:6, spray:0.09},
   rifle:  {name:'RIFLE',   type:'hitscan', dmg:40, cooldown:0.65, range:30, ammoType:'rifle',  noise:11,slot:7},
   mg:     {name:'MACHINE GUN',type:'hitscan',dmg:12,cooldown:0.09,range:22, ammoType:'mg',     noise:13,slot:8, spray:0.06},
+  nail:   {name:"MARTYR'S NAIL",type:'nail',dmg:88,cooldown:0.8, range:16, ammoType:'nails', noise:11,slot:9, bane:1.6},  // supernatural: pins demons to walls
+  cleaver:{name:'THE HEADSMAN',type:'melee',dmg:70,cooldown:0.62,range:2.7, ammoType:null, noise:0, slot:10, cleave:true, behead:true, knock:0.4},  // decapitates on the kill
 };
-const WEAPON_ORDER=['fists','bat','sword','pistol','shotgun','uzi','rifle','mg'];
+const WEAPON_ORDER=['fists','bat','sword','pistol','shotgun','uzi','rifle','mg','nail','cleaver'];
 // what Falcon starts with and what ammo he has. Fists always; pistol to start.
-const owned={fists:true,bat:false,sword:false,pistol:true,shotgun:true,uzi:false,rifle:false,mg:false};
-const ammo={pistol:24, shells:24, smg:0, rifle:0, mg:0};
+const owned={fists:true,bat:false,sword:false,pistol:true,shotgun:true,uzi:false,rifle:false,mg:false,nail:false,cleaver:false};
+const ammo={pistol:24, shells:24, smg:0, rifle:0, mg:0, nails:0};
 /* ---- PICKUPS: weapons, ammo, health placed along the linear route as
    breadcrumbs (research: pickups pull the player forward + reward the path).
    Weapons appear once, tied to space type; ammo sparse; health rare. Each: {x,y,
@@ -2220,6 +2542,8 @@ function render(){
   if(typeof MP!=='undefined'&&MP.active) MP.draw();
   drawProps();
   drawExitDoor();
+  drawTraps();
+  drawSevered();
   drawPickups();
   drawKeys();
   drawParticles();
@@ -2270,7 +2594,14 @@ function updateParticles(dt){
     if(p.life>=p.max){ particles.splice(i,1); continue; }
     p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt;
     if(p.kind==='blood'){ p.vz-=4*dt; } if(p.kind==='ember'){ p.vz-=0.3*dt; p.vx*=0.98; p.vy*=0.98; }
-    if(p.kind==='gib'){ p.vz-=5*dt; p.vx*=0.97; p.vy*=0.97; if(p.z<=0&&!p._l){ p._l=1; p.z=0; floorBlood.push({x:p.x,y:p.y,r:0.12,grow:1}); } } }
+    if(p.kind==='gib'){ p.vz-=5*dt; p.vx*=0.97; p.vy*=0.97; if(p.z<=0&&!p._l){ p._l=1; p.z=0; floorBlood.push({x:p.x,y:p.y,r:0.12,grow:1}); } }
+    if(p.kind==='head'){ p.vz-=5*dt; p.spin+=dt*8;
+      if(solid(p.x,p.y)){ p.vx*=-0.4; p.vy*=-0.4; }                 // bounce off walls
+      if(p.z<=0){ p.z=0;
+        if(!p._l){ p._l=1; floorBlood.push({x:p.x,y:p.y,r:0.22,grow:1}); }
+        p.vz=-p.vz*0.4; p.vx*=0.6; p.vy*=0.6;                       // roll + settle
+        if(Math.abs(p.vz)<0.6 && Math.hypot(p.vx,p.vy)<0.4 && !p._settled){
+          p._settled=1; SEVERED.push({x:p.x,y:p.y,tint:p.tint,sz:p.hsz||1}); p.life=p.max; } } } }
 }
 function drawParticles(){
   for(const p of particles){
@@ -2281,11 +2612,43 @@ function drawParticles(){
     const screenY=H/2+(H/dist)*(0.5-p.z);
     const t=1-p.life/p.max, sz=Math.max(1,(p.kind==='dust'?1.5:p.kind==='gib'?5:2.5)*(H/dist)/8);
     let c;
+    if(p.kind==='head'){ const hs=Math.max(3,(p.hsz||1)*(H/dist)/6);          // the flying head
+      const fog=Math.max(0.25,1-dist/DRAW_DIST), tn=p.tint||[150,120,100];
+      ctx.save(); ctx.globalAlpha=fog;
+      ctx.fillStyle='rgb('+(tn[0]|0)+','+(tn[1]|0)+','+(tn[2]|0)+')'; ctx.beginPath(); ctx.arc(col,screenY,hs,0,7); ctx.fill();
+      ctx.fillStyle='#1a1410'; ctx.fillRect(col-hs*0.6,screenY-hs,hs*1.2,hs*0.5);     // hair/scalp
+      ctx.fillStyle='#7e1410'; ctx.beginPath(); ctx.arc(col,screenY+hs*0.5,hs*0.5,0,7); ctx.fill(); // ragged neck
+      ctx.restore(); continue; }
     if(p.kind==='ember') c='rgba(255,'+(140+Math.random()*80|0)+',40,'+(t*0.9)+')';
     else if(p.kind==='blood') c='rgba('+(120+40*t|0)+',10,12,'+(t*0.9)+')';
     else if(p.kind==='gib') c='rgba('+(80+30*t|0)+',6,8,'+t+')';
     else c='rgba(180,175,165,'+(t*0.12)+')';
     ctx.fillStyle=c; ctx.fillRect(col-sz/2,screenY-sz/2,sz,sz);
+  }
+}
+// walk into a severed head and you punt it — it skitters off rolling in your heading
+function updateSevered(dt){
+  if(dead||won) return;
+  for(let i=SEVERED.length-1;i>=0;i--){ const s=SEVERED[i];
+    if(Math.hypot(s.x-P.x,s.y-P.y)<0.55){
+      SEVERED.splice(i,1);
+      const a=P.a+(Math.random()-0.5)*0.4, sp=3.4+Math.random()*2.2;      // kicked the way you're walking
+      spawnParticle({x:s.x,y:s.y,z:0.22,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,vz:1.1+Math.random()*0.7,life:0,max:2.6,kind:'head',tint:s.tint,hsz:s.sz,spin:0});
+      SFX.headKick ? SFX.headKick(s.x,s.y) : (SFX.melee&&SFX.melee(s.x,s.y));
+    }
+  }
+}
+// severed heads resting on the floor — permanent gore
+function drawSevered(){
+  for(const s of SEVERED){ const dx=s.x-P.x,dy=s.y-P.y,d=Math.hypot(dx,dy); if(d<0.2||d>DRAW_DIST)continue;
+    let rel=Math.atan2(dy,dx)-P.a; while(rel>Math.PI)rel-=6.283;while(rel<-Math.PI)rel+=6.283;
+    if(Math.abs(rel)>FOV/1.2)continue; const col=((0.5+rel/FOV)*W)|0; if(col<0||col>=W||d>zbuf[col]+0.3)continue;
+    const fog=Math.max(0,1-d/DRAW_DIST), hs=Math.max(2,(s.sz||1)*(H/d)/7), fy=H/2+(H/d)/2-hs*0.5, tn=s.tint||[150,120,100];
+    ctx.save(); ctx.globalAlpha=fog;
+    ctx.fillStyle='rgba(80,6,8,0.8)'; ctx.beginPath(); ctx.ellipse(col,fy+hs*0.7,hs*1.3,hs*0.5,0,0,7); ctx.fill();  // blood pool
+    ctx.fillStyle='rgb('+(tn[0]|0)+','+(tn[1]|0)+','+(tn[2]|0)+')'; ctx.beginPath(); ctx.arc(col,fy,hs,0,7); ctx.fill();
+    ctx.fillStyle='#1a1410'; ctx.fillRect(col-hs*0.7,fy-hs*0.8,hs*1.4,hs*0.5);
+    ctx.restore();
   }
 }
 // ── SCREEN FX ──
@@ -2559,6 +2922,7 @@ const GUNS2={
   uzi:{    off:0, nearW:50,recTopW:34,barrelW:15,farW:8,  mid:0.48, far:0.70, body:'poly', barrel:'gun', two:true,  flash:24 },
   rifle:{  off:0, nearW:60,recTopW:34,barrelW:14,farW:7,  mid:0.42, far:0.64, body:'wood', barrel:'gun', two:true,  flash:28, scope:true },
   mg:{     off:0, nearW:92,recTopW:56,barrelW:32,farW:16, mid:0.46, far:0.66, body:'gun',  barrel:'gun', two:true,  flash:40, belt:true },
+  nail:{   off:0, nearW:86,recTopW:52,barrelW:22,farW:15, mid:0.46, far:0.62, body:'gun',  barrel:'gun', two:true,  flash:16, belt:true, sight:true },  // heavy iron spike-driver
 };
 // a tapered top-face segment (wide near y0 -> narrow far y1): top ridge highlight + side shadow + outline
 function trap(g,cx,y0,w0,y1,w1,m){ const c=m[0],d=m[1],l=m[2];
@@ -2609,12 +2973,28 @@ function drawWeaponView(){
     g.restore(); return;
   }
 
-  if(weapon==='bat'||weapon==='sword'){
-    const sw=weapon==='sword', p=kick;
+  if(weapon==='bat'||weapon==='sword'||weapon==='cleaver'){
+    const sw=weapon==='sword', cl=weapon==='cleaver', p=kick;
     const ang=-0.55+p*1.45;
     const gx=BASE_W*0.5+124-p*118+bx, gy=BASE_H-48+p*26+by;
     g.save(); g.translate(gx,gy); g.rotate(ang);
-    const L=sw?210:196;
+    const L=sw?210:cl?168:196;
+    if(cl){
+      // THE HEADSMAN — a huge butcher's cleaver: broad steel blade, bolt-hole, bloody edge
+      vmSlab(g,-46,-L,92,L-70,VM_PAL.steel,VM_PAL.steelD,VM_PAL.steelL);     // broad blade
+      g.fillStyle=VM_PAL.steelL; g.fillRect(-42,-L+6,8,L-82);                // spine highlight
+      g.fillStyle='#7e1410'; g.fillRect(34,-L+4,10,L-76);                    // blood down the cutting edge
+      g.fillStyle='#4a0a0c'; g.fillRect(34,-L+4,4,L-76);
+      g.fillStyle=VM_PAL.steelD; g.beginPath(); g.arc(-26,-L+26,9,0,7); g.fill();   // bolt-hole
+      g.fillStyle='#07060a'; g.beginPath(); g.arc(-26,-L+26,5,0,7); g.fill();
+      vmSlab(g,-46,-70,92,10,VM_PAL.steelD,'#15131a',VM_PAL.steel);          // blade shoulder
+      vmSlab(g,-12,-62,24,70,VM_PAL.woodD,'#221607',VM_PAL.wood);            // handle
+      g.restore();
+      const hx=gx-Math.sin(ang)*16, hy=gy+Math.cos(ang)*16;
+      vmArm(g,hx,hy+16,0.26+ang*0.4,52,1,BASE_H); vmFist(g,hx,hy-8,64,46,1);
+      vmFist(g,hx-Math.sin(ang)*30,hy+Math.cos(ang)*30,60,42,1);
+      g.restore(); return;
+    }
     if(sw){
       vmSlab(g,-13,-L,26,L-52,VM_PAL.blade,VM_PAL.bladeD,VM_PAL.bladeL);
       g.fillStyle=VM_PAL.bladeL; g.fillRect(-3,-L+6,6,L-64);
@@ -3180,6 +3560,9 @@ function drawCreature(e){
     swollen:[RAMPS.bomb,RAMPS.bomb,'#ffff40'],
     gaunt:[RAMPS.skinGrey,RAMPS.gown,'#ffffff'],
     armored:[RAMPS.metal,RAMPS.metal,'#ffcc30'],
+    penitent:[RAMPS.skinPale,RAMPS.gownRot,'#ff5a2a'],   // hooded flagellant — ember eyes
+    acolyte:[RAMPS.skinGrey,RAMPS.gownRot,'#ffb060'],    // robed chanter — flame-lit eyes
+    stalker:[RAMPS.skinGrey,RAMPS.skinGrey,'#c0d0d0'],   // GAUNT — pale blind cave flesh
   }[shape]||[RAMPS.skinPale,RAMPS.gown,'#ff3020'];
   let [skR,clR,eye]=MAP;
   // shadow/mid/highlight for each material
@@ -3194,6 +3577,55 @@ function drawCreature(e){
   // (Doom method without hand-drawing 48 poses: the silhouette stays right, the
   //  face/eyes only show from the front & sides, never the back.)
   const isBack = (view==='back');
+  // ── NAILED TO THE WALL (MARTYR'S NAIL): body hangs LIMP from a single spike through
+  // the chest — head drooped, limbs dangling, blood running down. NOT a crucifixion
+  // (no spread arms). Shape-aware so each enemy family pins differently. ──
+  if(e.state==='dead' && e._nailed){
+    const humanoid=['human','thin','tall','gaunt','penitent','acolyte','stalker','armored'].includes(shape);
+    const blob=['lumpy','bulb','round','swollen'].includes(shape);
+    const wide=(shape==='wide'), low=(shape==='low'), eyeSh=(shape==='eye');
+    // blood sheeting down the wall below the wound (drawn first, behind the body)
+    box(cx-3,38,6,26,BLOOD_LO); box(cx-2,38,4,18,BLOOD_MID); box(cx-1,40,2,22,BLOOD_HI);
+    let ny=34;
+    if(humanoid){
+      // SPLAYED FLAT against the wall: torso spread wide & flattened, limbs limp out-and-down
+      box(cx-10,27,20,18,cloth); box(cx-10,27,7,18,clothSh); box(cx-10,27,20,3,clothHi);  // broad flattened torso
+      box(cx-14,30,5,5,skin); box(cx-17,34,5,16,skin);                     // left arm splayed out then down (limp)
+      box(cx+9,30,5,5,skin);  box(cx+12,34,5,16,skin);                     // right arm splayed out then down
+      box(cx-6,41,14,13,skin); box(cx-6,51,14,3,skinSh);                   // head lolled forward
+      box(cx-7,40,15,3,'#15110d');                                         // hair over the lolling head
+      box(cx-9,52,5,11,clothSh); box(cx+4,52,5,11,clothSh);               // legs splayed slack
+      ny=31;
+    } else if(wide){
+      box(cx-18,24,36,24,cloth); box(cx-18,24,10,24,clothSh);
+      box(cx-22,30,8,22,skin); box(cx+14,30,8,22,skin);                    // heavy arms dangle
+      box(cx-8,44,16,14,skin);                                            // head slumped
+      ny=30;
+    } else if(low){
+      box(cx-14,30,28,16,cloth); box(cx-14,42,28,4,skinSh);
+      box(cx-20,36,8,5,skin); box(cx+12,36,8,5,skin);
+      box(cx-8,24,16,12,skin);                                            // head
+      ny=32;
+    } else if(blob){
+      orb(cx,38,16,cloth); orb(cx-5,38,9,clothSh);                         // sagging impaled sac, deflating
+      box(cx-6,20,12,10,skin);
+      box(cx-9,54,3,8,BLOOD_LO); box(cx+6,54,3,8,BLOOD_LO);                // drips off the bottom
+      ny=36;
+    } else if(eyeSh){
+      orb(cx,34,15,clothSh); orb(cx,34,12,cloth); orb(cx,34,9,'#e8e8e8'); orb(cx,34,5,eye||'#a0e0ff');   // pinned eyeball, lid drooping
+      box(cx-14,33,28,3,'#2a2420');                                        // half-closed lid
+      ny=34;
+    } else {
+      box(cx-8,26,16,22,cloth); box(cx-10,32,5,20,skin); box(cx+6,32,5,20,skin); box(cx-6,40,13,12,skin); ny=32;
+    }
+    // THE SPIKE: a big iron nail head on the chest, shaft sunk into the wall behind
+    box(cx-1,ny-4,3,8,'#6a6258');                                         // shaft stub
+    orb(cx,ny,4,'#b8b0a0'); orb(cx-1,ny-1,1.6,'#e4dcc8');                 // nail head + glint
+    box(cx-3,ny+2,6,5,BLOOD_HI);                                          // fresh wound around the nail
+    if(e.dmg>0){ c.fillStyle='rgba(120,10,14,0.5)'; for(let i=0;i<8;i++) c.fillRect(cx-10+((i*13)%20),28+((i*17)%22),3,4); }
+    outlinePass(c,S);
+    return s;   // pinned body stays UPRIGHT — never toppled flat
+  }
   if(isBack) eye=null;                       // no eyes/face features from behind
   if(view==='left'||view==='right'){ c.save(); c.translate(S,0); c.scale(-1,1); }  // mirror
   // guard the box/orb eye calls: when eye is null, eye-coloured features vanish
@@ -3303,6 +3735,44 @@ function drawCreature(e){
     box(cx-18,56,12,8,clothSh); box(cx+6,56,12,8,clothSh);
     if(st!=='dormant'){box(cx-6,19,4,3,EYE);box(cx+3,19,4,3,EYE);}
   }
+  else if(shape==='penitent'){        // PENITENT — hooded flagellant: bulky sackcloth, dragging a flail
+    const sw=walk*3;
+    box(cx-14,24,28,34,cloth); box(cx-14,24,9,34,clothSh); box(cx+8,24,6,34,clothHi);   // broad robe
+    for(let i=0;i<6;i++) box(cx-14+i*5,56,4,3+((i*7)%4),clothSh);                        // ragged hem
+    box(cx-18,30+sw,8,18,cloth); box(cx+10,30-sw,8,18,cloth);                            // heavy sleeves
+    box(cx-11,8,22,16,cloth); box(cx-11,8,22,5,clothHi); box(cx-12,20,24,5,clothSh);     // overhanging hood
+    box(cx-7,13,14,11,'#0a0807');                                                        // shadowed face void
+    box(cx+12,44,7,7,skin); box(cx+12,44,7,3,BLOOD_MID);                                 // bare bloodied fist
+    const fl=8+(wind>0?wind*16:Math.abs(walk)*6);                                        // flail swings on wind/attack
+    c.strokeStyle='#2e2822'; c.lineWidth=2; c.beginPath(); c.moveTo(cx+15,46); c.lineTo(cx+15+fl*0.45,46+fl); c.stroke();
+    orb(cx+15+fl*0.45,46+fl,4,'#544c44'); orb(cx+15+fl*0.45,46+fl,2,'#2a2622');          // spiked head
+    c.fillStyle=BLOOD_LO; for(let i=0;i<4;i++) box(cx-7+i*5,30+((i*9)%14),3,10);          // scourge streaks
+    if(isBack){ c.fillStyle=BLOOD_MID; for(let i=0;i<5;i++) box(cx-10+i*4,28+((i*11)%16),2,13); }  // flayed back
+    if(st!=='dormant'){ box(cx-5,17,3,3,EYE); box(cx+2,17,3,3,EYE); }                    // embers in the hood
+  }
+  else if(shape==='acolyte'){         // ACOLYTE — robed chanter: slim, cups a growing flame offering
+    box(cx-8,18,16,40,cloth); box(cx-8,18,5,40,clothSh); box(cx+3,18,4,40,clothHi);      // slim robe
+    for(let i=0;i<4;i++) box(cx-8+i*5,56,4,3+((i*5)%3),clothSh);                          // ragged hem
+    box(cx-9,8,18,14,cloth); box(cx-9,8,18,4,clothHi); box(cx-6,12,12,10,'#0a0807');      // hood + face void
+    box(cx-12,30,8,4,cloth); box(cx+4,30,8,4,cloth);                                      // thin cupped arms
+    const fr=3+(wind>0?wind*9:Math.abs(Math.sin(T2*4))*1.5);                              // flame grows as it winds to lob
+    c.globalAlpha=0.5+0.4*(wind||0.3); orb(cx,34,fr+3,'#6a2a10'); c.globalAlpha=1;
+    orb(cx,34,fr,'#ff7a20'); orb(cx,33,fr*0.6,'#ffd060'); orb(cx,32,fr*0.3,'#fff2c0');    // the offering flame
+    if(st!=='dormant'){ box(cx-4,16,3,3,EYE); box(cx+2,16,3,3,EYE); }
+  }
+  else if(shape==='stalker'){         // GAUNT — pale blind cave predator: elongated, hunched, claws out to stab
+    c.save();c.translate(cx,0);c.rotate(0.14);c.translate(-cx,0);                        // forward hunch
+    box(cx-5,22,10,30,cloth); box(cx-5,22,3,30,clothSh); box(cx-5,20,10,3,clothHi);       // long narrow torso
+    const reach=6+Math.abs(walk)*6+wind*10;                                              // claws extend to stab
+    box(cx+3,26,reach,3,skin); box(cx+3+reach,24,4,3,skin);                              // upper arm + claw
+    box(cx+3,30,reach*0.8,3,skinSh); box(cx+3+reach*0.8,29,4,3,skin);                    // second clawed arm
+    box(cx-14,28,8,3,skin);                                                              // trailing arm
+    box(cx-4,10,11,12,skin); box(cx+5,12,4,8,skinSh);                                    // eyeless head thrust forward
+    box(cx-5,9,13,3,'#1a1614');                                                          // matted scalp
+    if(st!=='dormant'){ box(cx-1,15,6,5,'#1a0808'); for(let i=0;i<3;i++)box(cx+i*2,15,1,5,'#d8d0c4'); }  // lamprey maw + teeth
+    box(cx-3,52,3,12,skinSh); box(cx+2,52,3,12,skinSh);                                  // twig legs
+    c.restore();
+  }
   else {                              // HUMAN (rabid) — the baseline reference
     box(cx-11,26,22,26,cloth); box(cx-11,26,7,26,clothSh); box(cx-4,26,15,3,clothHi); box(cx-8,12,5,4,skinHi);
     box(cx-17,29+walk*3,7,16,skin); box(cx+10,29-walk*3,7,16,skin);   // arms
@@ -3318,9 +3788,17 @@ function drawCreature(e){
   // damage blood overlay
   if(e.dmg>0){ c.fillStyle='rgba(120,10,14,'+(0.5*e.dmg).toFixed(2)+')';
     for(let i=0;i<e.dmg*10;i++) c.fillRect(cx-14+((i*89)%28), 24+((i*57)%30), 3,4); }
+  // DECAPITATED: erase the head and leave a geysering neck stump (works for any shape —
+  // the head always sits top-centre of the sprite).
+  if(e._headless){
+    c.clearRect(cx-12,2,24,22);
+    c.fillStyle='#4a0c0e'; c.fillRect(cx-5,22,10,7);                 // raw neck stump
+    c.fillStyle=BLOOD_HI;  c.fillRect(cx-4,19,8,5);                  // open wound
+    c.fillStyle=BLOOD_MID; c.fillRect(cx-3,15,6,5);                  // spurt
+  }
   // death: rotate flat
   if(view==='left'||view==='right'){ c.restore(); }
-  if(isBack){ // draw hair/back-of-head over the top so no face peeks through
+  if(isBack && shape!=='penitent' && shape!=='acolyte'){ // hooded types keep their hood from behind
     c.fillStyle=skinSh; c.fillRect(cx-9,10,18,12);
     c.fillStyle='#241a16'; c.fillRect(cx-9,9,18,8);
   }
@@ -3881,6 +4359,35 @@ function drawPropSprite(kind, vseed, view){
         g.fillStyle=BLOOD_MID;g.fillRect(29,14,1,10);g.fillRect(35,14,1,8); }                                        // weeping blood
       g.fillStyle='#6a6660';g.fillRect(22,54,20,5); }
   }
+  // ═════════ CAVERN PROPS (Floor 7) — radial, read the same from every side ═════════
+  else if(kind==='stalagmite'){             // jagged rock spike rising from the floor
+    g.fillStyle='#4a423a';g.beginPath();g.moveTo(24,60);g.lineTo(31,14);g.lineTo(38,60);g.closePath();g.fill();
+    g.fillStyle='#5e564a';g.beginPath();g.moveTo(27,60);g.lineTo(31,18);g.lineTo(34,60);g.closePath();g.fill();
+    g.fillStyle='#6e6456';g.beginPath();g.moveTo(30,60);g.lineTo(31,22);g.lineTo(33,60);g.closePath();g.fill();  // lit facet
+    g.fillStyle='#2a241e';g.fillRect(22,58,20,3);
+    if(V&1){ g.fillStyle='#ff6a1e';g.globalAlpha=0.5;g.fillRect(26,52,12,6);g.globalAlpha=1; }                    // lava-lit base
+  }
+  else if(kind==='boulder'){                // rounded rock mass
+    g.fillStyle='#463e36';g.beginPath();g.ellipse(32,46,18,14,0,0,7);g.fill();
+    g.fillStyle='#564c42';g.beginPath();g.ellipse(29,43,12,9,0,0,7);g.fill();
+    g.fillStyle='#655a4c';g.beginPath();g.ellipse(27,41,5,4,0,0,7);g.fill();
+    g.fillStyle='#2a241e';g.fillRect(16,56,34,4);
+    g.strokeStyle='#2e2822';g.lineWidth=1;g.beginPath();g.moveTo(24,40);g.lineTo(34,52);g.stroke();               // crack
+  }
+  else if(kind==='bonepile'){               // heap of bones + a skull
+    g.fillStyle='#b8b0a0';for(let i=0;i<7;i++){g.save();g.translate(20+i*4,52-(i%3)*3);g.rotate((i*1.3)%3-1.5);g.fillRect(0,0,12,3);g.restore();}
+    g.fillStyle='#d8d0bc';g.beginPath();g.arc(30,48,7,0,7);g.fill();                                              // skull
+    g.fillStyle='#17120e';g.fillRect(27,47,3,3);g.fillRect(32,47,3,3);g.fillRect(29,51,3,2);
+    g.fillStyle='#2a241e';g.fillRect(16,56,34,3);
+    if(V&1){ g.fillStyle=BLOOD_LO;g.fillRect(22,54,18,4); }
+  }
+  else if(kind==='lavarock'){               // cracked rock glowing from within
+    g.fillStyle='#3a322a';g.beginPath();g.ellipse(32,48,16,12,0,0,7);g.fill();
+    g.save();g.globalAlpha=0.9;g.strokeStyle='#ff7a20';g.lineWidth=2;g.shadowColor='#ff9a40';g.shadowBlur=8;
+    g.beginPath();g.moveTo(22,46);g.lineTo(30,50);g.lineTo(26,56);g.moveTo(40,44);g.lineTo(32,50);g.stroke();g.restore();
+    g.fillStyle='#ffd080';g.beginPath();g.arc(30,50,2,0,7);g.fill();
+    g.fillStyle='#2a241e';g.fillRect(18,57,30,3);
+  }
   return c;
 }
 
@@ -3934,6 +4441,62 @@ function drawFireSprite(phase, fuel){
   return c;
 }
 
+// ── DEMONIC TRAPS render: a floor sigil (always) + a vertical effect when active ──
+function drawTraps(){
+  for(const tr of TRAPS){
+    const dx=tr.x-P.x, dy=tr.y-P.y, d=Math.hypot(dx,dy);
+    if(d<0.25||d>DRAW_DIST) continue;
+    let rel=Math.atan2(dy,dx)-P.a; while(rel>Math.PI)rel-=6.283; while(rel<-Math.PI)rel+=6.283;
+    if(Math.abs(rel)>FOV/1.1) continue;
+    const col=(0.5+rel/FOV)*W; if(col<-40||col>W+40) continue;
+    if(d>zbuf[Math.max(0,Math.min(W-1,col|0))]+0.4) continue;      // wall occlusion
+    const fog=Math.max(0,1-d/DRAW_DIST), sc=H/d, floorY=H/2+sc/2;
+    const g=ctx; g.save(); g.globalAlpha=fog;
+    const st=tr.state, active=(st==='active'), tele=(st==='telegraph')||tr.tele, erupt=tr.erupt;
+    // ── FLOOR SIGIL (a glowing rune ring + pentagram, flattened to the ground) ──
+    const rw=sc*0.55, rh=sc*0.2;                                   // elliptical (floor perspective)
+    let glow = st==='spent'?0.18 : tele?(0.6+0.4*Math.sin(T*18)) : active?1 : erupt?0.9 : 0.4;
+    const hue = (tr.kind==='firejet')?[255,120,30] : (tr.kind==='snare')?[150,40,160] : [200,30,30];
+    g.globalAlpha=fog*(0.25+0.5*glow);
+    const grd=g.createRadialGradient(col,floorY,0,col,floorY,rw);
+    grd.addColorStop(0,'rgba('+hue[0]+','+hue[1]+','+hue[2]+','+(0.5*glow+0.2)+')');
+    grd.addColorStop(1,'rgba('+hue[0]+','+hue[1]+','+hue[2]+',0)');
+    g.fillStyle=grd; g.beginPath(); g.ellipse(col,floorY,rw,rh,0,0,6.283); g.fill();
+    // rune ring + pentagram lines
+    g.globalAlpha=fog*(0.4+0.5*glow); g.strokeStyle='rgb('+hue[0]+','+(hue[1]+40)+','+hue[2]+')'; g.lineWidth=Math.max(1,sc*0.02);
+    g.beginPath(); g.ellipse(col,floorY,rw*0.82,rh*0.82,0,0,6.283); g.stroke();
+    g.beginPath();
+    for(let i=0;i<=5;i++){ const a=-1.5708+i*2*(2*Math.PI/5); const px=col+Math.cos(a)*rw*0.7, py=floorY+Math.sin(a)*rh*0.7;
+      if(i===0)g.moveTo(px,py); else g.lineTo(px,py); }
+    g.stroke();
+    // ── VERTICAL EFFECTS ──
+    g.globalAlpha=fog;
+    if(tr.kind==='sigil' && (active||tele)){                        // hellfire pillar + rising bodies
+      const h=sc*(active?2.2:1.0*Math.random()); const fg=g.createLinearGradient(col,floorY,col,floorY-h);
+      fg.addColorStop(0,'rgba(255,200,80,'+(active?0.9:0.5)+')'); fg.addColorStop(0.5,'rgba(220,60,20,'+(active?0.7:0.3)+')'); fg.addColorStop(1,'rgba(120,10,10,0)');
+      g.fillStyle=fg; g.fillRect(col-sc*0.28,floorY-h,sc*0.56,h);
+      for(let i=0;i<5;i++){ const fx=col+(Math.random()-0.5)*sc*0.6, fy=floorY-Math.random()*h; g.fillStyle='rgba(255,'+(120+Math.random()*100|0)+',40,0.8)'; g.fillRect(fx,fy,sc*0.05,sc*0.05); }
+    }
+    else if(tr.kind==='firejet' && (erupt||tele)){                  // hellfire geyser column
+      const h=sc*(erupt?2.4:0.5+0.3*Math.sin(T*20)); const fg=g.createLinearGradient(col,floorY,col,floorY-h);
+      fg.addColorStop(0,'rgba(255,230,140,'+(erupt?0.95:0.4)+')'); fg.addColorStop(0.45,'rgba(255,90,20,'+(erupt?0.8:0.3)+')'); fg.addColorStop(1,'rgba(140,20,10,0)');
+      g.fillStyle=fg; g.fillRect(col-sc*0.2,floorY-h,sc*0.4,h);
+    }
+    else if(tr.kind==='spikes' && active){                          // bone/iron spikes thrust up
+      g.fillStyle='#d8d0c0'; g.strokeStyle='#2a2420'; g.lineWidth=1;
+      for(let i=-2;i<=2;i++){ const bx=col+i*sc*0.16, bh=sc*(0.5+Math.random()*0.3);
+        g.beginPath(); g.moveTo(bx-sc*0.06,floorY); g.lineTo(bx,floorY-bh); g.lineTo(bx+sc*0.06,floorY); g.closePath(); g.fill(); g.stroke();
+        g.fillStyle='rgba(120,10,12,0.7)'; g.fillRect(bx-sc*0.02,floorY-bh*0.4,sc*0.04,bh*0.4); g.fillStyle='#d8d0c0'; }
+    }
+    else if(tr.kind==='snare' && active){                           // grasping charred hands
+      g.strokeStyle='#2a1820'; g.fillStyle='#3a2630'; g.lineWidth=Math.max(1,sc*0.03);
+      for(let i=-2;i<=2;i++){ const hx=col+i*sc*0.18, hh=sc*(0.35+Math.random()*0.25);
+        g.beginPath(); g.moveTo(hx,floorY); g.lineTo(hx+(Math.random()-0.5)*sc*0.1,floorY-hh); g.stroke();
+        for(let f=0;f<3;f++){ g.beginPath(); g.moveTo(hx,floorY-hh); g.lineTo(hx-sc*0.08+f*sc*0.08,floorY-hh-sc*0.1); g.stroke(); } }
+    }
+    g.restore();
+  }
+}
 function drawProps(){
   const items=[];
   // cull far props before building/sorting the sprite list (they render ≤16 tiles anyway)
@@ -4225,6 +4788,20 @@ function fire(){
   if(w.type==='melee'){ meleeSwing(w); return; }
   // guns: spend ammo, muzzle flash, noise
   ammo[w.ammoType]--; muzzle=1; recoil=1; updateWeaponHUD();
+  if(w.type==='nail'){
+    // MARTYR'S NAIL — heavy single spike. Extra blood on impact; if it kills a demon
+    // beside a wall, it drives it INTO the wall (pinned, impaled-sag pose).
+    const hit=rayHit(P.a, w.range);
+    if(hit){ const e=hit.e, was=e.hp;
+      for(let i=0;i<3;i++) bloodSpray(e.x,e.y); gibBurst(e.x,e.y);        // squirt
+      let dmg=w.dmg * ((ETYPES[e.type]&&ETYPES[e.type].demon)?(w.bane||1):1);
+      hitEnemy(e, dmg, 'nail');
+      if(was>0 && e.hp<=0 && !e.boss) tryNailToWall(e, P.a);              // pin to wall on kill
+      SFX.hit&&SFX.hit(e.x,e.y);
+    }
+    SFX.nailShot ? SFX.nailShot() : (SFX.rifleShot&&SFX.rifleShot());
+    alertNoise(P.x,P.y,w.noise); return;
+  }
   if(w.type==='pellets'){
     // shotgun: N rays across a spread cone, each with distance falloff
     for(let p=0;p<w.pellets;p++){
@@ -4246,6 +4823,40 @@ function fire(){
     else SFX.pistol();
   }
   alertNoise(P.x, P.y, w.noise);
+}
+// MARTYR'S NAIL: if a wall is within ~5 ft, drive the body into it — pinned upright,
+// impaled (no topple). _nailed makes drawCreature use the sag pose.
+const NAIL_RANGE=1.6;   // ~5 ft (1 tile ≈ 3.3 ft)
+const NAIL_HUG=0.34;    // how far the pinned body sits off the wall face (flush)
+// snap the body flush to the wall face it just crossed, recording the wall NORMAL so
+// the sprite can be flattened against that wall.
+function _snapFlush(e, px,py, prx,pry){
+  let bx=prx, by=pry, nx=0, ny=0;
+  if(Math.floor(px)!==Math.floor(prx)){ const bnd=px>prx?Math.floor(px):Math.floor(prx);
+    bx=(px>prx)?bnd-NAIL_HUG:bnd+NAIL_HUG; nx=(px>prx)?-1:1; }
+  if(Math.floor(py)!==Math.floor(pry)){ const bnd=py>pry?Math.floor(py):Math.floor(pry);
+    by=(py>pry)?bnd-NAIL_HUG:bnd+NAIL_HUG; ny=(py>pry)?-1:1; }
+  if(solid(bx,by)) return false;
+  e.x=bx; e.y=by; e._nailed=1; e._nailN=[nx,ny]; e._deadT=0; e.finishable=false;
+  for(let i=0;i<2;i++) bloodSpray(e.x,e.y); return true;
+}
+function tryNailToWall(e, ang){
+  const dxs=Math.cos(ang), dys=Math.sin(ang);
+  // 1) PRIMARY — the wall the nail drives it INTO: march along the shot past the body
+  let prx=e.x, pry=e.y;
+  for(let s=0.2; s<=NAIL_RANGE; s+=0.15){
+    const px=e.x+dxs*s, py=e.y+dys*s;
+    if(solid(px,py)){ if(_snapFlush(e,px,py,prx,pry)) return true; break; }
+    prx=px; pry=py;
+  }
+  // 2) FALLBACK — nearest wall in any cardinal within 5 ft (slides the body to its face)
+  for(let r=0.3;r<=NAIL_RANGE;r+=0.15){
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const px=e.x+dx*r, py=e.y+dy*r;
+      if(solid(px,py) && _snapFlush(e,px,py,e.x+dx*(r-0.15),e.y+dy*(r-0.15))) return true;
+    }
+  }
+  return false;
 }
 // find nearest enemy along angle a within range and line-of-sight
 function rayHit(a, range){
@@ -4274,12 +4885,25 @@ function meleeSwing(w){
     return {e,dist,rel};
   }).filter(t=>t.dist<=w.range && Math.abs(t.rel)<0.9).sort((a,b)=>a.dist-b.dist);
   for(const t of targets){
+    const e=t.e, was=e.hp;
     // FINISHER: melee on a finishable (low-HP) enemy executes it for health
-    if(t.e.finishable && t.e.state!=='dead'){ killEnemy(t.e,'melee',true); hits++; if(!w.cleave||hits>=2)break; continue; }
-    hitEnemy(t.e, w.dmg, 'melee'); SFX.hit(t.e.x,t.e.y);
-    hits++; if(!w.cleave || hits>=2) break;    // fists/bat hit 1, sword cleaves 2
+    if(e.finishable && e.state!=='dead'){ killEnemy(e,'melee',true); if(w.behead&&!e.boss)decapitate(e); hits++; if(!w.cleave||hits>=2)break; continue; }
+    hitEnemy(e, w.dmg, 'melee'); SFX.hit(e.x,e.y);
+    if(w.behead && !e.boss && was>0 && e.hp<=0) decapitate(e);   // THE HEADSMAN: lop the head on the kill
+    hits++; if(!w.cleave || hits>=2) break;    // fists/bat hit 1, sword & cleaver cleave 2
   }
   // melee is silent — no alertNoise (stealth option per spec)
+}
+// DECAPITATION: headless body, arterial geyser, and the head flies off to roll on the floor.
+let SEVERED=[];
+function decapitate(e){
+  e._headless=1; e._deadT=0;
+  for(let i=0;i<24;i++) spawnParticle({x:e.x,y:e.y,z:0.95+Math.random()*0.3,
+    vx:(Math.random()-0.5)*1.6,vy:(Math.random()-0.5)*1.6,vz:1.6+Math.random()*2.0,life:0,max:0.5+Math.random()*0.5,kind:'blood'});  // arterial geyser
+  bloodSpray(e.x,e.y); bloodSpray(e.x,e.y);
+  const a=P.a+(Math.random()-0.5)*0.7, sp=2.2+Math.random()*1.8;             // head launches roughly away from you
+  spawnParticle({x:e.x,y:e.y,z:1.05,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,vz:2.4+Math.random()*0.8,life:0,max:2.2,kind:'head',tint:e.tint||null,hsz:e.sz||1,spin:Math.random()*6.28});
+  SFX.behead ? SFX.behead(e.x,e.y) : (SFX.melee&&SFX.melee(e.x,e.y));
 }
 function hitEnemy(e,amount,dtype){
   // per-enemy damage-type multipliers (Patient: soft, explosives/melee land hard).
@@ -5219,6 +5843,33 @@ const VOX={
              pain:{f0:140,dur:0.6,f1:360,f2:900,slide:0.6,rough:0.3,rm:0.6,rmHz:34,sub:0.9,biph:0.4,chaos:0.55,drive:0.6,vol:0.68,rev:0.7,md:16},
              attack:{f0:90,dur:0.8,f1:300,f2:780,slide:0.72,rough:0.3,rm:0.8,rmHz:34,sub:0.98,biph:0.4,biphR:1.33,chaos:0.6,drive:0.78,vol:0.74,rev:0.7,md:18},
              death:{f0:65,dur:2.0,f1:260,f2:640,slide:0.12,rough:0.25,rm:0.6,rmHz:30,sub:0.99,biph:0.45,chaos:0.85,drive:0.65,vol:0.74,rev:0.95,md:22} },
+  // ---- chapel cult (F6) ----
+  penitent:{ idle:{f0:150,dur:1.2,f1:360,f2:760,slide:0.5,rough:0.35,rm:0.6,rmHz:32,sub:0.85,biph:0.3,chaos:0.35,drive:0.5,vol:0.32,rev:0.7},
+             pain:{f0:200,dur:0.42,f1:460,f2:980,slide:0.6,rough:0.5,rm:0.7,rmHz:44,sub:0.75,biph:0.4,chaos:0.55,drive:0.7,vol:0.56,rev:0.6},
+             attack:{f0:170,dur:0.36,f1:420,f2:900,slide:0.72,rough:0.5,rm:0.78,rmHz:50,sub:0.7,biph:0.4,chaos:0.6,drive:0.78,vol:0.58,rev:0.5},
+             death:{f0:150,dur:0.95,f1:360,f2:820,slide:0.18,rough:0.4,rm:0.6,rmHz:38,sub:0.85,biph:0.35,chaos:0.78,drive:0.6,vol:0.58,rev:0.78} },
+  acolyte: { idle:{f0:380,dur:1.0,f1:820,f2:1700,slide:0.55,rough:0.3,rm:0.6,rmHz:54,sub:0.3,biph:0.6,biphR:1.5,chaos:0.35,drive:0.4,vol:0.3,rev:0.72},
+             pain:{f0:460,dur:0.3,f1:980,f2:2100,slide:0.78,rough:0.45,rm:0.72,rmHz:72,sub:0.25,biph:0.6,chaos:0.55,drive:0.6,vol:0.5,rev:0.55},
+             attack:{f0:420,dur:0.3,f1:900,f2:1950,slide:0.82,rough:0.45,rm:0.76,rmHz:78,sub:0.3,biph:0.6,biphR:1.5,chaos:0.6,drive:0.66,vol:0.52,rev:0.5},
+             death:{f0:360,dur:0.8,f1:760,f2:1600,slide:0.2,rough:0.4,rm:0.68,rmHz:58,sub:0.4,biph:0.55,chaos:0.75,drive:0.58,vol:0.54,rev:0.72} },
+  // ---- the gaunt (F7 cave predator): shrill, blind, screeching ----
+  leaper:  { idle:{f0:600,dur:0.7,f1:1300,f2:2800,slide:0.6,rough:0.4,rm:0.7,rmHz:88,sub:0.2,biph:0.5,chaos:0.5,drive:0.5,vol:0.28,rev:0.5},
+             pain:{f0:780,dur:0.22,f1:1500,f2:3300,slide:0.85,rough:0.55,rm:0.8,rmHz:110,sub:0.15,biph:0.55,chaos:0.7,drive:0.65,vol:0.48,rev:0.4},
+             attack:{f0:720,dur:0.2,f1:1450,f2:3200,slide:0.9,rough:0.55,rm:0.82,rmHz:120,sub:0.15,biph:0.6,chaos:0.72,drive:0.7,vol:0.5,rev:0.38},
+             death:{f0:560,dur:0.6,f1:1150,f2:2500,slide:0.24,rough:0.5,rm:0.72,rmHz:80,sub:0.25,biph:0.5,chaos:0.8,drive:0.6,vol:0.5,rev:0.5} },
+  // ---- bosses ----
+  shepherd:{ idle:{f0:130,dur:1.5,f1:320,f2:720,slide:0.5,rough:0.35,rm:0.6,rmHz:28,sub:0.9,biph:0.35,chaos:0.4,drive:0.55,vol:0.4,rev:0.8},
+             pain:{f0:180,dur:0.5,f1:420,f2:900,slide:0.6,rough:0.5,rm:0.72,rmHz:40,sub:0.8,biph:0.45,chaos:0.6,drive:0.75,vol:0.6,rev:0.65},
+             attack:{f0:150,dur:0.45,f1:380,f2:860,slide:0.72,rough:0.5,rm:0.8,rmHz:46,sub:0.78,biph:0.45,chaos:0.65,drive:0.82,vol:0.64,rev:0.55},
+             death:{f0:120,dur:1.3,f1:300,f2:700,slide:0.16,rough:0.42,rm:0.64,rmHz:32,sub:0.92,biph:0.4,chaos:0.82,drive:0.62,vol:0.64,rev:0.82} },
+  vatborn: { idle:{f0:120,dur:1.4,f1:320,f2:740,slide:0.55,rough:0.3,rm:0.66,rmHz:30,sub:0.88,biph:0.42,biphR:1.33,chaos:0.45,drive:0.4,vol:0.4,rev:0.8},
+             pain:{f0:180,dur:0.46,f1:440,f2:960,slide:0.62,rough:0.45,rm:0.7,rmHz:44,sub:0.8,biph:0.48,chaos:0.62,drive:0.6,vol:0.58,rev:0.68},
+             attack:{f0:150,dur:0.4,f1:400,f2:900,slide:0.72,rough:0.45,rm:0.76,rmHz:50,sub:0.78,biph:0.48,chaos:0.66,drive:0.7,vol:0.6,rev:0.58},
+             death:{f0:130,dur:1.1,f1:340,f2:780,slide:0.18,rough:0.4,rm:0.64,rmHz:38,sub:0.9,biph:0.44,chaos:0.82,drive:0.55,vol:0.6,rev:0.82} },
+  sister:  { idle:{f0:420,dur:1.0,f1:900,f2:1900,slide:0.55,rough:0.3,rm:0.6,rmHz:58,sub:0.35,biph:0.5,chaos:0.4,drive:0.42,vol:0.32,rev:0.72},
+             pain:{f0:520,dur:0.3,f1:1080,f2:2300,slide:0.8,rough:0.45,rm:0.72,rmHz:80,sub:0.3,biph:0.55,chaos:0.58,drive:0.6,vol:0.5,rev:0.56},
+             attack:{f0:470,dur:0.3,f1:1000,f2:2150,slide:0.84,rough:0.45,rm:0.76,rmHz:86,sub:0.32,biph:0.55,chaos:0.62,drive:0.66,vol:0.52,rev:0.5},
+             death:{f0:400,dur:0.85,f1:840,f2:1800,slide:0.2,rough:0.4,rm:0.68,rmHz:62,sub:0.42,biph:0.5,chaos:0.78,drive:0.58,vol:0.54,rev:0.74} },
 };
 VOX._default=VOX.basic;
 // dispatcher: positional, jittered, throttled by caller. kind ∈ idle|pain|attack|death
@@ -5313,6 +5964,18 @@ const SFX={
     thump({freq:80,dur:0.14,vol:0.4}); mech({vol:0.22}); }); },
   uziShot(){ snd('uzi', ()=>{ crack({vol:0.35}); burst({dur:0.07,vol:0.5,lp:4000,hp:250,curve:2.2,rev:0.15}); thump({freq:110,dur:0.06,vol:0.3}); }); },
   mgShot(){ snd('mg', ()=>{ crack({vol:0.45}); burst({dur:0.09,vol:0.62,lp:3600,hp:180,curve:2.0,rev:0.2}); thump({freq:85,dur:0.09,vol:0.45}); }); },
+  nailShot(){ snd('nail', ()=>{                                   // MARTYR'S NAIL: pneumatic ka-CHUNK + iron shriek
+    thump({freq:58,dur:0.13,vol:0.65});                           // heavy driver chunk
+    burst({dur:0.11,vol:0.5,lp:2800,hp:120,curve:2.6,rev:0.35});  // compressed air
+    tone({freq:2400,type:'square',dur:0.2,vol:0.2,slideTo:620});  // ringing iron, descending
+    mech({vol:0.32}); }); },
+  behead(x,y){ snd('behead', ()=>{                                // THE HEADSMAN: wet meaty chop + bone crack
+    noise({dur:0.07,vol:0.6,lp:2600,hp:120});                     // cleave through flesh
+    thump({freq:70,dur:0.1,vol:0.5});                             // heavy impact
+    tone({freq:320,type:'triangle',dur:0.08,vol:0.3,slideTo:90}); // bone crack
+    burst({dur:0.14,vol:0.4,lp:1400,hp:60,curve:2.4,rev:0.5}); }); },  // wet spray
+  headKick(x,y){ snd('kick', ()=>{                                // punting a head: dull wet thud
+    thump({freq:95,dur:0.09,vol:0.42}); noise({dur:0.05,vol:0.3,lp:900,hp:80}); }); },
   melee(){ noise({dur:0.09,vol:0.4,lp:1400,hp:200}); tone({freq:150,type:'triangle',dur:0.1,vol:0.3,slideTo:80}); }
 };
 // MUSIC — 16 fight tracks STREAM from ./music/ (hosted beside this file). Only one
@@ -5435,7 +6098,8 @@ addEventListener('keydown',e=>{const k=(e.key||'').toLowerCase();keys[k]=true;
   if(k==='escape'){ e.preventDefault(); togglePauseMenu(); return; }   // Escape → in-game menu, ALL modes
   if(pausedUI) return;                                                  // menu open: swallow gameplay keys
   if(k===' ')fire();
-  if(k>='1'&&k<='8') switchWeapon(parseInt(k));      // number keys select weapon
+  if(k>='1'&&k<='9') switchWeapon(parseInt(k));      // number keys select weapon
+  if(k==='0') switchWeapon(10);                       // THE HEADSMAN
   if(k==='tab'){ e.preventDefault(); if(MP.active){MP.scoreboard(true);} else nextWeapon(1); }
   if(k==='f'&&MP.active&&MP.mode==='zombies'&&MP._buyNear){ e.preventDefault(); MP.buy(); }
   if(k==='g') throwGrenade();
@@ -5503,6 +6167,8 @@ function step(dt){
     updateMusic(dt);
     pickups();
     updateHazards(dt);
+    updateTraps(dt);
+    updateSevered(dt);
     updateParticles(dt);
   }
   if(MP.active) MP.step(dt);
