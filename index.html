@@ -91,6 +91,7 @@
     <div id="pauseHint" style="color:#888;font-size:11px;letter-spacing:2px;margin:6px 0 12px">Game paused</div>
     <button id="btnPauseResume" style="font-size:16px;padding:10px 20px;margin:6px">RESUME</button><br>
     <button id="btnPauseRestart" style="font-size:16px;padding:10px 20px;margin:6px">RESTART LEVEL</button><br>
+    <button id="btnPauseCoop" style="font-size:16px;padding:10px 20px;margin:6px;display:none">ENABLE CO-OP</button><br>
     <button id="btnPauseLeave" style="font-size:16px;padding:10px 20px;margin:6px">LEAVE TO MENU</button>
   </div>
 </div>
@@ -5101,7 +5102,7 @@ function fire(){
   } else {
     // hitscan: single ray, small spray on autos
     const a=P.a + (w.spray? (Math.random()-0.5)*w.spray : 0);
-    if(MP.active&&MP.pvp) MP.shootRay(a, w.range, w.dmg, w.ammoType); else if(MP.active&&MP.mode==='zombies'&&!MP.host) MP.zShoot(a,w.range,w.dmg);
+    if(MP.active&&MP.pvp) MP.shootRay(a, w.range, w.dmg, w.ammoType); else if(MP.active&&MP.coopMode()&&!MP.host) MP.zShoot(a,w.range,w.dmg);
     const hit=rayHit(a, w.range);
     if(hit){ hitEnemy(hit.e, w.dmg, 'bullet'); SFX.hit(hit.e.x,hit.e.y); }
     // per-weapon fire sound (each layered + sample-overridable)
@@ -5285,6 +5286,7 @@ function pickups(){
       it.got=true;
     }
   }
+  if(!(typeof MP!=='undefined'&&MP.active&&MP.mode==='coop'))   // co-op keys are host-authoritative (handled in MP._coop); don't double-count here
   meta.keys.forEach((k,i)=>{ if(keysGot[i])return;
     if(Math.hypot(k[0]-P.x,k[1]-P.y)<0.7){ keysGot[i]=true; keyCount++;
       document.getElementById('keys').textContent=keyCount+'/'+meta.keys.length;
@@ -6507,7 +6509,7 @@ function step(dt){
         grid[sc[1]][sc[0]]=0; SFX.win&&SFX.win(); flash('SHORTCUT OPEN',1500); } }
     }
     // ACTION (F) at the exit door — walk up, press F to descend / finish
-    if(keys['f'] && _exitReady){ _exitReady=false; winFloor(); }
+    if(keys['f'] && _exitReady && !(MP.active&&MP.mode==='coop')){ _exitReady=false; winFloor(); }   // co-op descent is host-driven (MP._coop)
     // ACTION (F) at a closed door — walk up, press F, it swings open (stays open)
     if(keys['f'] && meta.doors && meta.doors.length){
       for(const dr of meta.doors){ if(grid[dr[1]][dr[0]]===8 &&
@@ -6578,6 +6580,8 @@ function openPauseMenu(){
   const pm=document.getElementById('pausemenu');
   const rb=document.getElementById('btnPauseRestart');
   if(rb) rb.style.display = sp?'inline-block':'none';   // restart only makes sense in SP
+  const cb=document.getElementById('btnPauseCoop');
+  if(cb) cb.style.display = sp?'inline-block':'none';   // enable co-op only from a solo campaign game
   const hint=document.getElementById('pauseHint');
   if(hint) hint.textContent = sp ? 'Game paused' : 'Multiplayer keeps running while this menu is open';
   if(pm) pm.style.display='flex';
@@ -6592,6 +6596,9 @@ function togglePauseMenu(){ if(pausedUI) closePauseMenu(); else openPauseMenu();
 document.getElementById('btnPauseResume').onclick=()=>closePauseMenu();
 document.getElementById('btnPauseRestart').onclick=()=>{ pausedUI=false;
   document.getElementById('pausemenu').style.display='none'; beginAt(levelIdx); };
+document.getElementById('btnPauseCoop').onclick=()=>{ pausedUI=false;
+  document.getElementById('pausemenu').style.display='none';
+  if(typeof MP!=='undefined') MP.enableCoopFromSP(); };
 document.getElementById('btnPauseLeave').onclick=()=>{ pausedUI=false;
   document.getElementById('pausemenu').style.display='none';
   if(typeof MP!=='undefined'&&MP.active){ MP.leave(); }
@@ -7010,21 +7017,29 @@ const MP = {
   _appliedState:null, _inGame:false, _iv:0, lobbyStart:0,
 
   skin:'operator', accent:'gold',
-  start(name, skin, accent, intent){
-    this.mode='dm'; this.pvp=true; this.skin=skin||'operator'; this.accent=accent||'gold';
+  start(name, skin, accent, intent, mode, floor){
+    this.mode=mode||'dm'; this.pvp=(this.mode!=='zombies'&&this.mode!=='coop'); this.skin=skin||'operator'; this.accent=accent||'gold';
     this.name=(name||'FALCON').slice(0,12).toUpperCase(); this.team='ffa';
     this.k=0; this.d=0; this.fl=false; this.players={}; this.killfeed=[];
     this.scores={red:0,blue:0}; this.points=0; this.papMul=1; this.z={wave:0,alive:0,quota:0,killed:0,spawned:0,nextWave:0,state:'countdown',enemies:[],mirror:[]};
     this.myReady=false; this.myVote=null; this._appliedState=null; this._inGame=false; this._ended=false; this._hostUid=null;
-    const pool=this._poolFor('dm'); this.arenaIdx=pool[0]; this.arena=ARENAS[pool[0]];
-    this.loadArena(pool[0]);
+    this._coopStartFloor=(floor!=null?floor:0);
+    const pool=this._poolFor(this.mode); this.arenaIdx=pool[0]; this.arena=ARENAS[pool[0]];
+    if(this.mode!=='coop') this.loadArena(pool[0]);
     if(!this.init()){ // offline: fully playable solo lobby (pick mode inside)
       this.active=true; this.host=true; this.roomRef=null; this.uid=this.genId(); this._hostUid=this.uid;
-      this.room={state:'lobby',mode:'dm',arena:pool[0],pool,startAt:0,why:''}; this.lobbyStart=Date.now();
+      this.room={state:'lobby',mode:this.mode,arena:pool[0],pool,startAt:0,why:'',floor:this._coopStartFloor}; this.lobbyStart=Date.now();
       this.status('OFFLINE — solo lobby. Pick a mode & ready up.'); this._startLobbyLoop(); return;
     }
     this.uid=this.genId();
     if(intent==='create') this.createRoom(); else this.joinRoom();
+  },
+  // Enable co-op from an in-progress SOLO campaign: host a drop-in co-op room on the
+  // current floor so others can join and play the campaign together.
+  enableCoopFromSP(){
+    const floor=(typeof levelIdx!=='undefined')?levelIdx:0;
+    if(typeof closePauseMenu==='function') closePauseMenu();
+    this.start((typeof PROFILE!=='undefined'&&PROFILE.name)||'FALCON', this.skin, this.accent, 'create', 'coop', floor);
   },
 
   loadArena(idx){
@@ -7120,9 +7135,9 @@ const MP = {
     this.status('Creating lobby…');
     let roomsRef; try{ roomsRef=this.db.ref('rooms'); }catch(e){ return this._joinFail('DB error: '+e.message); }
     this._joinT=setTimeout(()=>{ if(!this.active) this._joinFail('No response from the database. Dropped you into a solo lobby.'); }, 9000);
-    const target=roomsRef.push().key; const pool=this._poolFor('dm');
+    const target=roomsRef.push().key; const pool=this._poolFor(this.mode);
     this.roomId=target; this.roomRef=this.db.ref('rooms/'+target);
-    this.room={state:'lobby',mode:'dm',arena:pool[0],pool,startAt:0,why:''};
+    this.room={state:'lobby',mode:this.mode,arena:pool[0],pool,startAt:0,why:'',floor:(this._coopStartFloor||0)};
     this.roomRef.update({tag:'lobby',host:this.uid,created:firebase.database.ServerValue.TIMESTAMP});
     this.roomRef.child('lobby').set(this.room)
       .then(()=>{ this.host=true; this._hostUid=this.uid; this.afterJoin(); })
@@ -7162,13 +7177,14 @@ const MP = {
       pref.on('child_changed',s=>{ if(s.key!==this.uid) this._updPlayer(s.key,s.val()); });
       pref.on('child_removed',s=>{ delete this.players[s.key]; this._checkHost(); });
       this.roomRef.child('inbox/'+this.uid).on('child_added',s=>{ const d=s.val();
-        if(d&&d.revive){ this._doRevive(); }
+        if(d&&d.kick){ if(flash)flash('KICKED BY HOST',2200); this.leave(); return; }   // host removed you
+        else if(d&&d.revive){ this._doRevive(); }
         else if(d&&d.kill){ this.k=(this.k|0)+1; this._feed(this.name+' ▸ '+(d.victim||'?')); }   // my kill registers locally -> syncs + drives win check
         else { this.applyDamage(d); } s.ref.remove(); });
       this.roomRef.child('scores').on('value',s=>{ this.scores=s.val()||{red:0,blue:0}; });
       if(this.mode==='ctf'){ this.roomRef.child('flags').on('value',s=>{ const f=s.val(); if(f){ if(f.red)this.flags.red=f.red; if(f.blue)this.flags.blue=f.blue; } }); }
       // zombie stream: subscribe ALWAYS (mode isn't locked yet at join) and gate by mode at runtime
-      this.roomRef.child('z').on('value',s=>{ const v=s.val(); if(v && this.coopMode()){ this.z.wave=v.wave||0; if(!this.host){ this.z.state=v.state||this.z.state; this.z.killed=v.killed||0; this.z.quota=v.quota||0; this.z.over=v.over||0; if(v.enemies) this.z.mirror=v.enemies; if(this.mode==='coop' && v.floor!=null && v.floor!==this.coopFloor){ this.coopFloor=v.floor; this._coopClientLoadFloor(v.floor); } } } });
+      this.roomRef.child('z').on('value',s=>{ const v=s.val(); if(v && this.coopMode()){ this.z.wave=v.wave||0; if(!this.host){ this.z.state=v.state||this.z.state; this.z.killed=v.killed||0; this.z.quota=v.quota||0; this.z.over=v.over||0; if(v.enemies) this.z.mirror=v.enemies; if(this.mode==='coop'){ if(v.floor!=null && v.floor!==this.coopFloor){ this.coopFloor=v.floor; this._coopClientLoadFloor(v.floor); } if(v.keys&&typeof keysGot!=='undefined'){ for(let i=0;i<v.keys.length&&i<keysGot.length;i++) keysGot[i]=!!v.keys[i]; if(v.kc!=null)keyCount=v.kc; } } } } });
       this.roomRef.child('zdmg').on('child_added',s=>{ if(!this.host||!this.coopMode()) return; const d=s.val(); const e=enemies[d.i]; if(e&&e.hp>0){ e.hp-=d.dmg; e.hitFlash=0.1; if(e.hp<=0){ e.state='dead'; if(!e._zc){e._zc=1; this.z.killed++;} } } s.ref.remove(); });
       this.roomRef.child('lobby').on('value',s=>this._onMeta(s.val()));   // lobby/match state sync
       this.roomRef.child('host').on('value',s=>{ this._hostUid=s.val(); this.host=(this._hostUid===this.uid); if(this._appliedState!=null&&(this.room.state==='lobby'||this.room.state==='countdown')) this._renderLobby(); });
@@ -7180,6 +7196,7 @@ const MP = {
   _addPlayer(id,v){ this.players[id]={...v, rx:v.x, ry:v.y, ra:v.a, lastFr:v.fr||0, flash:0}; },
   _updPlayer(id,v){ const p=this.players[id]; if(!p){ this._addPlayer(id,v); return; }
     const wasAlive=(p.hp|0)>0;
+    if(p.x==null||Math.abs(v.x-p.x)>0.05||Math.abs(v.y-p.y)>0.05) p._moveAt=Date.now();   // idle tracking for host kick
     Object.assign(p,v); if(p.rx==null){p.rx=v.x;p.ry=v.y;p.ra=v.a;}
     if((v.fr||0)!==p.lastFr){ p.flash=0.12; p.lastFr=v.fr||0;
       if(this.mode==='dm'||p.team!==this.team) gunPing(v.x,v.y); }
@@ -7300,6 +7317,77 @@ const MP = {
   },
 
   // ── CO-OP ZOMBIES (COD-style): waves, points, buy-stations, breach spawns ──
+  // ═════════ CAMPAIGN CO-OP (2 players, host-authoritative, drop-in) ═════════
+  _coopEnemyArr(){ return enemies.slice(0,40).filter(e=>e.state!=='dead'||e.boss)
+      .map(e=>({x:+e.x.toFixed(2),y:+e.y.toFixed(2),h:e.hp|0,t:e.type,s:e.state,hd:+(e.heading||0).toFixed(2)})); },
+  _coopScaleEnemies(){                      // +HP and +bodies per extra player (2p only, so ~1 step)
+    const nP=1+Object.keys(this.players).length; if(nP<=1) return;
+    const hpMul=1+(nP-1)*0.35;
+    for(const e of enemies){ e.hp=Math.round(e.hp*(e.boss?(1+(nP-1)*0.5):hpMul)); e.maxhp=e.hp; }
+    const base=enemies.filter(e=>!e.boss&&e.state!=='dead'), extra=Math.round(base.length*0.3*(nP-1));
+    for(let i=0;i<extra&&base.length;i++){ const src=base[(Math.random()*base.length)|0];
+      for(let t=0;t<14;t++){ const ex=src.x+(Math.random()*5-2.5), ey=src.y+(Math.random()*5-2.5);
+        if(!solidR(ex,ey,0.34)){ const ne=makeEnemy(ex,ey,src.type); ne.hp=Math.round(ne.hp*hpMul); ne.maxhp=ne.hp; ne.state='dormant'; enemies.push(ne); break; } } }
+  },
+  _coopLoadFloorHost(floor){
+    if(floor>=LEVELS.length){ this._coopVictory(); return; }
+    this.coopFloor=floor; loadLevel(floor); running=true; this.dead=false; this.down=false;
+    P.hp=100; { const h=document.getElementById('hp'); if(h)h.textContent=100; }
+    const rs=document.getElementById('mprespawn'); if(rs)rs.style.display='none';
+    this._coopScaleEnemies(); this.z.overAt=0; this.z.over=0;
+    if(this.roomRef) this.roomRef.child('z').update({floor,enemies:this._coopEnemyArr(),keys:(keysGot||[]).map(k=>k?1:0),kc:keyCount|0,state:'active'});
+  },
+  _coopClientLoadFloor(floor){
+    if(floor>=LEVELS.length){ this._coopVictory(); return; }
+    this.coopFloor=floor; loadLevel(floor); running=true; enemies.length=0;   // mirror host enemies; no local AI
+    this.dead=false; this.down=false; P.hp=100; { const h=document.getElementById('hp'); if(h)h.textContent=100; }
+    const rs=document.getElementById('mprespawn'); if(rs)rs.style.display='none';
+  },
+  _coopNextFloor(){ if(!this.host)return; const nx=this.coopFloor+1;
+    if(nx>=LEVELS.length){ this._coopVictory(); return; }
+    this._feed('DESCENDING TO FLOOR '+(nx+1)); if(flash)flash('FLOOR '+(nx+1),1800);
+    if(this.roomRef) this.roomRef.child('lobby').update({floor:nx});
+    this._coopLoadFloorHost(nx); this.spawnMe(); },
+  _coopRestartFloor(){ if(!this.host)return; this._feed('ALL DOWN — RESTARTING FLOOR '+(this.coopFloor+1));
+    this.z.overAt=0; this.z.over=0;
+    if(this.roomRef){ for(const id in this.players) this.roomRef.child('inbox/'+id).push({revive:1,t:Date.now()}); }
+    this._coopLoadFloorHost(this.coopFloor); this.spawnMe(); },
+  _coopVictory(){ this._ended=true; running=false; const why='CAMPAIGN COMPLETE';
+    if(this.roomRef) this.roomRef.child('lobby').update({state:'ended',why}); else this._setState({state:'ended',why}); },
+  _coop(dt){
+    // revive a downed teammate by standing near them (3s)
+    if(!this.dead){ let near=null;
+      for(const id in this.players){ const p=this.players[id]; if((p.down||(p.hp|0)<=0) && Math.hypot((p.rx!=null?p.rx:p.x)-P.x,(p.ry!=null?p.ry:p.y)-P.y)<1.5){ near=id; break; } }
+      if(near){ this._revT=(this._revT||0)+dt; const o=document.getElementById('objective'); if(o)o.textContent='REVIVING… '+Math.max(0,(3-this._revT)).toFixed(1)+'s';
+        if(this._revT>=3){ this._revT=0; if(this.roomRef)this.roomRef.child('inbox/'+near).push({revive:1,t:Date.now()}); this._feed(this.name+' revived '+((this.players[near]&&this.players[near].name)||'a teammate')); } }
+      else this._revT=0; }
+    if(!this.host){   // client: reflect streamed key count on the HUD
+      const kEl=document.getElementById('keys'); if(kEl&&meta.keys) kEl.textContent=(keyCount|0)+'/'+meta.keys.length;
+      const oEl=document.getElementById('objective'); if(oEl&&!this._revT) oEl.textContent=(keyCount>=(meta.keys?meta.keys.length:0))?'GET TO THE EXIT':('FIND THE KEYS  '+(keyCount|0)+'/'+(meta.keys?meta.keys.length:0));
+      return; }
+    // HOST — all down -> RESTART the floor (never game-over in campaign co-op)
+    if(this._inGame&&!this._ended){ let allDown=!!this.dead;
+      for(const id in this.players){ const p=this.players[id]; if(!(p.down||(p.hp|0)<=0)){ allDown=false; break; } }
+      if(allDown){ if(!this.z.overAt)this.z.overAt=T+10; this.z.over=Math.max(0,Math.ceil(this.z.overAt-T));
+        if(T>=this.z.overAt){ this._coopRestartFloor(); return; } }
+      else { this.z.overAt=0; this.z.over=0; } }
+    // HOST — team key pickup: any living player near an uncollected key grabs it
+    if(meta.keys){ for(let i=0;i<meta.keys.length;i++){ if(keysGot[i])continue; const k=meta.keys[i];
+      let got=(!this.dead&&Math.hypot(k[0]-P.x,k[1]-P.y)<0.9);
+      if(!got) for(const id in this.players){ const p=this.players[id]; if((p.hp|0)<=0)continue; if(Math.hypot(k[0]-(p.rx!=null?p.rx:p.x),k[1]-(p.ry!=null?p.ry:p.y))<0.9){got=true;break;} }
+      if(got){ keysGot[i]=true; keyCount++; SFX.pickup&&SFX.pickup(); const kEl=document.getElementById('keys'); if(kEl)kEl.textContent=keyCount+'/'+meta.keys.length;
+        if(flash) flash(keyCount>=meta.keys.length?'ALL KEYS — GET TO THE EXIT':('KEY '+keyCount+'/'+meta.keys.length), keyCount>=meta.keys.length?2200:1400); } } }
+    // HOST — exit: keys done and any living player reaches the exit -> descend
+    if(meta.exit && keyCount>=(meta.keys?meta.keys.length:0)){
+      let at=(!this.dead&&Math.hypot(meta.exit[0]-P.x,meta.exit[1]-P.y)<1.4);
+      if(!at) for(const id in this.players){ const p=this.players[id]; if((p.hp|0)<=0)continue; if(Math.hypot(meta.exit[0]-(p.rx!=null?p.rx:p.x),meta.exit[1]-(p.ry!=null?p.ry:p.y))<1.4){at=true;break;} }
+      if(at){ this._coopNextFloor(); return; } }
+    // HOST — stream enemy + objective state
+    if(this.roomRef && T-(this._zsend||0)>0.1){ this._zsend=T;
+      this.roomRef.child('z').update({enemies:this._coopEnemyArr(),floor:this.coopFloor,keys:(keysGot||[]).map(k=>k?1:0),kc:keyCount|0,state:'active'}); }
+    const oEl=document.getElementById('objective');
+    if(oEl&&!this._revT) oEl.textContent=(keyCount>=(meta.keys?meta.keys.length:0))?'GET TO THE EXIT':('FIND THE KEYS  '+keyCount+'/'+(meta.keys?meta.keys.length:0));
+  },
   _zombies(dt){
     // ── one-life-per-round: revive downed teammates; round ends when everyone is down ──
     if(!this.dead){ let near=null;
@@ -7554,16 +7642,26 @@ const MP = {
 
   scoreboard(show){
     const el=document.getElementById('mpboard'); if(!el)return; if(!show){el.style.display='none';return;}
-    const rows=[{name:this.name+' (you)',team:this.team,k:this.k,d:this.d}];
-    for(const id in this.players){ const p=this.players[id]; rows.push({name:p.name,team:p.team,k:p.k||0,d:p.d||0}); }
+    const title=(this.arena&&this.arena.name)||(this.mode==='coop'?('FLOOR '+((this.coopFloor||0)+1)):'');
+    const now=Date.now();
+    const rows=[{id:null,name:this.name+' (you)',team:this.team,k:this.k,d:this.d,idle:false}];
+    for(const id in this.players){ const p=this.players[id]; rows.push({id,name:p.name,team:p.team,k:p.k||0,d:p.d||0,idle:(now-(p._moveAt||now))>12000}); }
     rows.sort((a,b)=>b.k-a.k);
-    el.innerHTML='<div style="font-size:15px;letter-spacing:3px;color:#c33;margin-bottom:8px">'+this.mode.toUpperCase()+' — '+this.arena.name+'</div>'+
-      rows.map(r=>'<div style="display:flex;justify-content:space-between;color:'+(r.team==='blue'?'#7ab0ff':r.team==='red'?'#ff7a7a':'#ddd')+'"><span>'+r.name+'</span><span>'+r.k+' / '+r.d+'</span></div>').join('');
+    el.innerHTML='<div style="font-size:15px;letter-spacing:3px;color:#c33;margin-bottom:8px">'+this.mode.toUpperCase()+(title?(' — '+title):'')+'</div>'+
+      rows.map(r=>'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;color:'+(r.team==='blue'?'#7ab0ff':r.team==='red'?'#ff7a7a':'#ddd')+'"><span>'+r.name+(r.idle?' <span style="color:#c84">[IDLE]</span>':'')+'</span><span style="display:flex;gap:8px;align-items:center"><span>'+r.k+' / '+r.d+'</span>'+((this.host&&r.id)?'<button data-kick="'+r.id+'" style="font-size:9px;padding:1px 6px;background:#3a1014;color:#f99;border:1px solid #944;cursor:pointer">KICK</button>':'')+'</span></div>').join('');
     el.style.display='block';
+    [...el.querySelectorAll('[data-kick]')].forEach(b=>b.onclick=()=>this.kickPlayer(b.dataset.kick));
+  },
+  kickPlayer(id){ if(!this.host||!this.roomRef||!id)return;
+    const nm=(this.players[id]&&this.players[id].name)||'player';
+    this.roomRef.child('inbox/'+id).push({kick:1,t:Date.now()});   // tell them to leave
+    this.roomRef.child('players/'+id).remove();                     // drop from roster
+    this._feed(nm+' was kicked'); if(flash)flash('KICKED '+nm,1500);
   },
 
   // ═════════ COD-STYLE LOBBY / MATCHMAKING LOOP ═════════
-  _poolFor(mode){ const want=(mode==='zombies')?'zombies':'pvp';
+  _poolFor(mode){ if(mode==='coop') return [0];   // campaign co-op plays the real floors (no arena vote); starts on floor 0
+    const want=(mode==='zombies')?'zombies':'pvp';
     const idx=ARENAS.map((a,i)=>i).filter(i=>(ARENAS[i].type||'pvp')===want);
     return idx.length?idx:[0]; },   // offer EVERY map of this mode, not just two
   _startLobbyLoop(){ if(this._iv)clearInterval(this._iv); this._iv=setInterval(()=>this._tick(),200); this._tick(); },
