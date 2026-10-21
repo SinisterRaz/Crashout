@@ -2374,10 +2374,10 @@ const WEAPONS={
   sword:  {name:'SWORD',   type:'melee',   dmg:34, cooldown:0.5, range:2.5, ammoType:null,  noise:0,  slot:3, cleave:true},
   pistol: {name:'PISTOL',  type:'hitscan', dmg:16, cooldown:0.4, range:20, ammoType:'pistol', noise:9, slot:4, kick:7},
   shotgun:{name:'SHOTGUN', type:'pellets', dmg:9,  cooldown:0.95, range:9,  ammoType:'shells', noise:12,slot:5, pellets:7, spread:0.32, kick:18},
-  uzi:    {name:'UZI',     type:'hitscan', dmg:8,  cooldown:0.1, range:14, ammoType:'smg',    noise:8, slot:6, spray:0.09, kick:5},
+  uzi:    {name:'UZI',     type:'hitscan', dmg:8,  cooldown:0.1, range:14, ammoType:'smg',    noise:8, slot:6, spray:0.09, kick:5, auto:true},
   rifle:  {name:'RIFLE',   type:'hitscan', dmg:40, cooldown:0.65, range:30, ammoType:'rifle',  noise:11,slot:7, kick:12},
-  mg:     {name:'MACHINE GUN',type:'hitscan',dmg:12,cooldown:0.09,range:22, ammoType:'mg',     noise:13,slot:8, spray:0.06, kick:5},
-  lmg:    {name:'LMG',     type:'hitscan', dmg:17, cooldown:0.11, range:26, ammoType:'belt',   noise:15,slot:11, spray:0.11, kick:9, moveSlow:0.7},  // belt-fed: hits hard, heavy sway + kick, slows you
+  mg:     {name:'MACHINE GUN',type:'hitscan',dmg:12,cooldown:0.09,range:22, ammoType:'mg',     noise:13,slot:8, spray:0.06, kick:5, auto:true},
+  lmg:    {name:'LMG',     type:'hitscan', dmg:17, cooldown:0.11, range:26, ammoType:'belt',   noise:15,slot:11, spray:0.11, kick:9, moveSlow:0.7, auto:true},  // belt-fed: hits hard, heavy sway + kick, slows you
   nail:   {name:"MARTYR'S NAIL",type:'nail',dmg:88,cooldown:0.8, range:16, ammoType:'nails', noise:11,slot:9, bane:1.6, kick:16},  // supernatural: pins demons to walls
   cleaver:{name:'THE HEADSMAN',type:'melee',dmg:70,cooldown:0.62,range:2.7, ammoType:null, noise:0, slot:10, cleave:true, behead:true, knock:0.4},  // decapitates on the kill
 };
@@ -2810,6 +2810,54 @@ function render(){
   drawLetterbox();      // cinematic bars — mask vertical peripheral motion (anti motion-sickness)
   drawBossBar();
   drawMinimap();
+  drawAmmoHUD();
+}
+// Big, always-visible ammo readout + reload feedback (clip / reserve, reload bar, low-ammo + reload prompts)
+function drawAmmoHUD(){
+  if(!running||menuVisible) return;
+  const w=curW(); if(!w) return;
+  const S=Math.max(0.6, H/270);                         // scale to render-buffer height
+  ctx.save(); ctx.textBaseline='alphabetic';
+  if(!w.ammoType){                                      // melee — just show ∞
+    ctx.font='bold '+(20*S|0)+'px monospace'; ctx.textAlign='right';
+    ctx.fillStyle='#8fb3c8'; ctx.fillText('∞', W-10*S, H-14*S);
+    ctx.font='bold '+(11*S|0)+'px monospace'; ctx.fillStyle='#6a7580'; ctx.fillText(w.name, W-10*S, H-30*S);
+    ctx.restore(); return;
+  }
+  const at=w.ammoType, cl=clip[at]|0, res=ammo[at]|0, mag=(typeof magSize==='function')?magSize(curWeapon):(MAGS[curWeapon]||cl);
+  const reloading=(reloadType===at);
+  const low=(mag>0 && cl/mag<=0.25);
+  // --- bottom-right block ---
+  const rx=W-10*S, by=H-12*S;
+  ctx.textAlign='right';
+  ctx.font='bold '+(30*S|0)+'px monospace';
+  ctx.fillStyle = reloading? '#ffcf5a' : (cl===0? '#ff5a5a' : (low? '#ff9a3a' : '#f2e7cf'));
+  ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=4*S;
+  ctx.fillText(reloading? '—' : (''+cl), rx-54*S, by);
+  ctx.font='bold '+(16*S|0)+'px monospace'; ctx.fillStyle='#9fb0bd';
+  ctx.fillText('/ '+res, rx, by);
+  ctx.shadowBlur=0;
+  ctx.font='bold '+(10*S|0)+'px monospace'; ctx.fillStyle='#6a7580';
+  ctx.fillText(w.name+'   MAG '+mag, rx, by-30*S);
+  // --- reload progress bar + text near the reticle ---
+  if(reloading){
+    const dur=(typeof reloadTime==='function')?reloadTime(reloadGun):1.2;
+    const prog=Math.max(0,Math.min(1,1-(reloadEnd-T)/Math.max(0.01,dur)));
+    const bw=120*S, bh=7*S, bxx=W/2-bw/2, byy=H*0.60;
+    ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(bxx-2,byy-2,bw+4,bh+4);
+    ctx.fillStyle='#2a2f36'; ctx.fillRect(bxx,byy,bw,bh);
+    ctx.fillStyle='#ffcf5a'; ctx.fillRect(bxx,byy,bw*prog,bh);
+    ctx.font='bold '+(12*S|0)+'px monospace'; ctx.textAlign='center'; ctx.fillStyle='#ffcf5a';
+    ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4*S;
+    ctx.fillText('RELOADING', W/2, byy-6*S); ctx.shadowBlur=0;
+  } else if(cl===0 && res>0){           // empty but have reserve -> prompt
+    if((T*2|0)%2===0){ ctx.font='bold '+(13*S|0)+'px monospace'; ctx.textAlign='center'; ctx.fillStyle='#ff7a7a';
+      ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4*S; ctx.fillText('PRESS  R  TO RELOAD', W/2, H*0.60); ctx.shadowBlur=0; }
+  } else if(cl===0 && res===0){
+    ctx.font='bold '+(13*S|0)+'px monospace'; ctx.textAlign='center'; ctx.fillStyle='#ff5a5a';
+    ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4*S; ctx.fillText('NO AMMO', W/2, H*0.60); ctx.shadowBlur=0;
+  }
+  ctx.restore();
 }
 // CINEMATIC LETTERBOX: opaque bars top & bottom with a thin framed edge. Hiding the
 // vertical periphery cuts the optical-flow that drives motion sickness, and it reads
@@ -6744,6 +6792,8 @@ function step(dt){
   if(hitMark>0)hitMark-=dt*5; if(hitKill>0)hitKill-=dt*4;
   if(dashCd>0)dashCd-=dt; if(shake>0)shake-=dt*2.6;
   if(!dead&&!won&&!(MP.active&&MP.dead)){
+    // AUTOMATIC weapons: hold the trigger to keep firing (fireCd governs the rate)
+    { const _w=curW(); if(_w&&_w.auto&&(keys[' ']||dragging)) fire(); }
     if(P.stunT>0)P.stunT-=dt;                                   // Shepherd's bell toll slows you briefly
     const stunM=(P.stunT>0)?0.42:1;
     const wpnM=(WEAPONS[curWeapon]&&WEAPONS[curWeapon].moveSlow)||1;   // LMG etc. slow your move
