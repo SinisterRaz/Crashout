@@ -186,7 +186,16 @@
     <div id="prof_xptxt" style="color:#888;font-size:11px">0 XP</div>
     <div id="prof_stats" style="color:#ccc;font-size:12px;margin:10px 0"></div>
     <div id="prof_chals" style="text-align:left;max-width:360px;margin:0 auto;font-size:12px"></div>
-    <div style="margin-top:14px"><button id="profback">BACK</button></div>
+    <div style="margin-top:14px"><button id="btnPerks" style="font-size:13px;padding:6px 16px">◆ PERKS</button> <button id="profback">BACK</button></div>
+  </div>
+</div>
+<div id="perks" class="card" style="display:none">
+  <div class="cardwrap" style="min-width:480px;max-width:640px">
+    <h2 style="color:#c93;letter-spacing:4px">PERKS</h2>
+    <div style="color:#777;font-size:10px;letter-spacing:2px;margin-bottom:4px">CAMPAIGN UPGRADES · EARN A POINT EACH LEVEL</div>
+    <div id="perk_pts" style="color:#fd6;font-size:14px;letter-spacing:2px;margin-bottom:10px">POINTS: 0</div>
+    <div id="perk_grid" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center"></div>
+    <div style="margin-top:14px"><button id="perkback">BACK</button></div>
   </div>
 </div>
 <div id="gunsmith" class="card" style="display:none">
@@ -216,12 +225,25 @@
         <input type="range" id="sSfx" min="0" max="100" value="85" style="width:100%"></label><br><br>
       <label>Quality <span id="vQual">High</span><br>
         <input type="range" id="sQual" min="50" max="150" step="25" value="100" style="width:100%"></label><br><br>
+      <div style="letter-spacing:2px;color:#c93;font-size:12px;margin:2px 0 5px">COMFORT PRESET</div>
+      <span id="comfortsel" style="display:inline-flex;gap:5px">
+        <button class="cfbtn" data-cf="off"     style="font-size:12px;padding:4px 10px">OFF</button>
+        <button class="cfbtn" data-cf="reduced" style="font-size:12px;padding:4px 10px">REDUCED</button>
+        <button class="cfbtn" data-cf="comfort" style="font-size:12px;padding:4px 10px">MAX COMFORT</button>
+      </span>
+      <div style="font-size:10px;color:#876;margin:3px 0 10px">One-click anti-nausea — sets FOV, motion, vignette, bars &amp; flashing together</div>
+      <label>Field of View <span id="vFov">60&deg;</span><br>
+        <input type="range" id="sFov" min="50" max="110" step="5" value="60" style="width:100%"></label>
+      <div style="font-size:10px;color:#876;margin-top:3px">Match your screen distance; too low feels zoomed, too high adds edge motion</div><br>
       <label>Screen Motion <span id="vMotion">40%</span><br>
         <input type="range" id="sMotion" min="0" max="100" step="10" value="40" style="width:100%"></label>
-      <div style="font-size:10px;color:#876;margin-top:3px">Lower = less view-bob &amp; screen-shake (reduces dizziness)</div><br>
+      <div style="font-size:10px;color:#876;margin-top:3px">Lower = less view-bob, shake &amp; fire-kick (reduces dizziness)</div><br>
       <label>Cinematic Bars <span id="vLetter">10%</span><br>
         <input type="range" id="sLetter" min="0" max="20" step="2" value="10" style="width:100%"></label>
-      <div style="font-size:10px;color:#876;margin-top:3px">Widescreen letterbox — masks edge motion (reduces dizziness)</div>
+      <div style="font-size:10px;color:#876;margin-top:3px">Widescreen letterbox — masks edge motion (reduces dizziness)</div><br>
+      <label>Comfort Vignette <span id="vCvig">0%</span><br>
+        <input type="range" id="sCvig" min="0" max="100" step="10" value="0" style="width:100%"></label>
+      <div style="font-size:10px;color:#876;margin-top:3px">Darkens the edges only while moving/turning — the strongest anti-nausea aid</div>
       <br><br>
       <label style="cursor:pointer"><input type="checkbox" id="sReduceFx" style="vertical-align:middle;margin-right:6px">Reduce Flashing &amp; Jumpscares</label>
       <div style="font-size:10px;color:#876;margin-top:3px">Photosensitivity-safe: no jumpscares, muted screen flashes, gentler shake</div>
@@ -421,6 +443,18 @@ _buildCeilMul();
 // Flat integer-indexed tile grids (index = ty*MW+tx) — no per-pixel string keys,
 // zero per-frame allocation in the floor cast. Cells are null or an array.
 let _decalGrid=null, _bloodGrid=null, _bloodLen=-1;
+// PER-TILE LIGHT GRID — the floor/ceiling cast calls lightAt()/lightColorAt() for
+// every pixel; those used to loop over ALL placed lights per pixel. Each static light
+// already has a precomputed visibility set (_vis) of exactly the tiles it reaches, so
+// we invert that into a flat tile->lights index. A pixel then iterates only the lights
+// that actually touch its tile. Membership is identical to the old (d2<=r² AND tile∈_vis)
+// test, so output is pixel-for-pixel unchanged. Lights are static per level (never
+// pushed at runtime — only HAZARDS are), so this is built once per loadLevel.
+let _lightGrid=null;
+function _buildLightGrid(){ _lightGrid=new Array(MW*MH).fill(null);
+  for(const lt of LIGHTS){ const vis=lt._vis; if(!vis)continue;
+    for(const k of vis){ const c=k.indexOf(','); const tx=+k.slice(0,c), ty=+k.slice(c+1);
+      if(tx<0||ty<0||tx>=MW||ty>=MH)continue; const gi=ty*MW+tx; (_lightGrid[gi]||(_lightGrid[gi]=[])).push(lt); } } }
 function _buildDecalBuckets(){ _decalGrid=new Array(MW*MH).fill(null);
   for(const fd of _floorDecals){ const x0=Math.max(0,(fd.x-fd.r)|0),x1=Math.min(MW-1,(fd.x+fd.r)|0),y0=Math.max(0,(fd.y-fd.r)|0),y1=Math.min(MH-1,(fd.y+fd.r)|0);
     for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){ const gi=ty*MW+tx; (_decalGrid[gi]||(_decalGrid[gi]=[])).push(fd); } } }
@@ -660,6 +694,7 @@ function loadLevel(i){
   SEVERED=[];
   for(const lt of LIGHTS) lt._vis=computeVis(lt.x,lt.y,lt.r);
   for(const h of HAZARDS) h._vis=computeVis(h.x,h.y,(h.r||1)+2.5);
+  _buildLightGrid();   // invert _vis into a per-tile light index for the floor cast
   FOGCOL=L.fog||[10,13,11];
   DARKNESS=L.darkness||0;
   SKYCOL=L.sky||[16,18,20];   // ceiling colour — bright for outdoor/daytime maps, dark indoors
@@ -2504,6 +2539,7 @@ function magSize(gun){ const base=MAGS[gun]||0; if(!base)return 0;
   return base; }
 function reloadTime(gun){ let t=RELOADS[gun]||1.2;
   if(typeof MP!=='undefined'&&MP.active&&MP.pvp){ const w=effWeapon(gun); if(w&&w._reloadMul) t*=w._reloadMul; }
+  else if(typeof PK!=='undefined') t*=PK.reload;   // QUICKDRAW perk (SP)
   return t; }
 // top a gun's clip up from its reserve (free, no timer) — used on load/pickup/arm
 function ensureClip(gun){ const at=AMMO_OF[gun]; if(!at)return; const mag=magSize(gun);
@@ -2622,7 +2658,7 @@ function updateWeaponHUD(){
 }
 
 const cv=document.getElementById('view'), ctx=cv.getContext('2d');
-const FOV=Math.PI/3;
+let FOV=Math.PI/3;   // horizontal field of view (radians) — adjustable via the FOV comfort slider
 // Internal render resolution is independent of display size. On weak hardware a
 // raycaster is fill-rate bound (every pixel drawn on the CPU each frame), so
 // rendering at a smaller buffer and letting the browser scale it up is close to
@@ -2641,7 +2677,10 @@ function setQuality(q){
 }
 setQuality(1.0);   // 480x270 default — holds 60fps incl. MP. Quality slider goes up to 1.5 for sharper detail on strong machines.
 // ---- SETTINGS (main-menu adjustable; applied live) ----
-const SETTINGS={ sens:0.0025, music:0.1, sfx:0.85, quality:1.0, motion:0.4, letterbox:0.1, reduceFlash:false };
+const SETTINGS={ sens:0.0025, music:0.1, sfx:0.85, quality:1.0, motion:0.4, letterbox:0.1, reduceFlash:false, fov:60, comfortVig:0 };
+// fov = horizontal FOV in DEGREES (60 = the classic default). comfortVig = strength 0..1 of
+// the motion-triggered comfort vignette (darkens the edges only WHILE moving/turning — the
+// strongest evidence-backed anti-nausea technique; invisible and zero-cost at rest).
 let _reduceFx=false;   // photosensitivity mode: no jumpscares, muted flashes, gentler shake
 let MOTION=0.4;      // 0..1 comfort multiplier for view-bob + screen-shake
 let LETTERBOX=0.1;   // 0..~0.2 cinematic bar fraction per side (anti motion-sickness)
@@ -2650,6 +2689,7 @@ function applySettings(){
   MOTION=SETTINGS.motion;
   LETTERBOX=SETTINGS.letterbox;
   _reduceFx=!!SETTINGS.reduceFlash;
+  if(SETTINGS.fov) FOV=Math.max(50,Math.min(110,SETTINGS.fov))*Math.PI/180;   // clamp 50–110°; read live by the whole raycaster
   if(typeof menuMusic!=='undefined'&&menuMusic)menuMusic.volume=MUSIC_VOL;
   if(typeof bgm!=='undefined'&&bgm)bgm.volume=MUSIC_VOL;
   document.querySelectorAll('audio').forEach(a=>{ a.volume=MUSIC_VOL; });
@@ -2659,7 +2699,7 @@ function applySettings(){
 // ── PERSISTENT PLAYER PROFILE + DAILY CHALLENGES (localStorage, per-browser) ──
 const RANKS=['RECRUIT','GRUNT','SOLDIER','VETERAN','ELITE','KILLER','SLAYER','REAPER','NIGHTMARE','APEX PREDATOR'];
 let PROFILE={ id:'', name:'FALCON', xp:0, kills:0, deaths:0, wins:0, bestWave:0, skin:'operator', accent:'gold', chalDate:'', chals:[],
-  gp:30, unlocks:{}, loadout:{} };   // GUNSMITH (MP only): gp=gun points, unlocks=bought attachment ids, loadout=equipped {gun:{slot:id}}
+  gp:30, unlocks:{}, loadout:{}, perks:{} };   // GUNSMITH (MP only) + SP campaign perks
 function saveProfile(){ try{ localStorage.setItem('crashout_profile', JSON.stringify(PROFILE)); }catch(e){} }
 /* ── SINGLE-PLAYER DIFFICULTY ─────────────────────────────────────────────
    HARD is the original tuning (current game); NORMAL and EASY soften enemy
@@ -2673,6 +2713,28 @@ function renderDiff(){ const sel=document.getElementById('diffsel'); if(!sel)ret
 function levelOf(xp){ return 1+Math.floor(Math.sqrt(Math.max(0,xp)/150)); }
 function rankOf(lv){ return RANKS[Math.min(RANKS.length-1, Math.floor((lv-1)/2))]; }
 function addXP(n){ PROFILE.xp+=n; }
+/* ── PERK SYSTEM — spend the levels you earn on permanent campaign upgrades. One
+   perk point per level gained; each effect hooks a single chokepoint (low risk). */
+const PERKS=[
+  {id:'deadeye',  name:'DEADEYE',    max:3, per:0.08, desc:'+8% weapon damage'},
+  {id:'ironclad', name:'IRONCLAD',   max:3, per:0.08, desc:'-8% damage taken'},
+  {id:'quickdraw',name:'QUICKDRAW',  max:3, per:0.13, desc:'-13% reload time'},
+  {id:'butcher',  name:'BUTCHER',    max:2, per:0.5,  desc:'+50% finisher healing'},
+  {id:'fleet',    name:'FLEET FOOT', max:2, per:0.07, desc:'+7% move speed'},
+  {id:'demo',     name:'DEMOLITION', max:2, per:1,    desc:'+1 grenade on spawn'},
+  {id:'regen',    name:'RESILIENCE', max:2, per:1,    desc:'slowly regenerate health out of combat'},
+  {id:'scav',     name:'SCAVENGER',  max:2, per:0.5,  desc:'+50% ammo from pickups'},
+];
+function perksEarned(){ return Math.max(0, levelOf(PROFILE.xp)-1); }
+function perksSpent(){ let n=0; const pk=PROFILE.perks||{}; for(const k in pk)n+=pk[k]|0; return n; }
+function perkPts(){ return perksEarned()-perksSpent(); }
+function perkLvl(id){ return (PROFILE.perks&&PROFILE.perks[id])|0; }
+// computed multipliers/bonuses read by gameplay
+let PK={dmg:1, dmgTaken:1, reload:1, finHeal:1, speed:1, nades:0, regen:0, pickup:1};
+function computePerks(){ const L=(id)=>perkLvl(id);
+  PK.dmg=1+L('deadeye')*0.08; PK.dmgTaken=1-L('ironclad')*0.08; PK.reload=1-L('quickdraw')*0.13;
+  PK.finHeal=1+L('butcher')*0.5; PK.speed=1+L('fleet')*0.07; PK.nades=L('demo');
+  PK.regen=L('regen'); PK.pickup=1+L('scav')*0.5; }
 const CHAL_POOL=[
   {id:'k50',desc:'Kill 50 enemies',goal:50,type:'kills',xp:300},
   {id:'k150',desc:'Kill 150 enemies',goal:150,type:'kills',xp:600},
@@ -2692,12 +2754,15 @@ function chalReach(type,val){ let done=false; for(const c of PROFILE.chals){ if(
 (function(){ try{ const j=localStorage.getItem('crashout_profile'); if(j)PROFILE=Object.assign(PROFILE,JSON.parse(j)); }catch(e){} if(!PROFILE.id)PROFILE.id='p'+Math.random().toString(36).slice(2,10);
   if(PROFILE.gp==null)PROFILE.gp=30; if(!PROFILE.unlocks)PROFILE.unlocks={}; if(!PROFILE.loadout)PROFILE.loadout={};   // gunsmith migration
   if(!PROFILE.diff||!DIFFS[PROFILE.diff])PROFILE.diff='normal'; DIFF=DIFFS[PROFILE.diff];
+  if(!PROFILE.perks)PROFILE.perks={}; computePerks();
   rollDailies(); saveProfile(); })();
 let T=0;
    // shared so enemy shading fogs to the same colour as the world
 
-function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
-  if(d2>lt.r*lt.r)continue; if(lt._vis&&!lt._vis.has((wx|0)+','+(wy|0)))continue; const fall=1-Math.sqrt(d2)/lt.r;
+function lightAt(wx,wy){let L=0; const _xi=wx|0,_yi=wy|0;
+  const _lb=(_lightGrid&&_xi>=0&&_yi>=0&&_xi<MW&&_yi<MH)?_lightGrid[_yi*MW+_xi]:LIGHTS;
+  if(_lb) for(const lt of _lb){const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
+  if(d2>lt.r*lt.r)continue; if(_lb===LIGHTS && lt._vis && !lt._vis.has(_xi+','+_yi))continue; const fall=1-Math.sqrt(d2)/lt.r;
   let fl;
     if(lt.flicker){ // failing fluorescent: mostly ON but stutters to dark
       const n=Math.sin(T*23+lt.x*7.7)*Math.sin(T*9.3+lt.y*3.1);
@@ -2728,10 +2793,12 @@ function lightAt(wx,wy){let L=0;for(const lt of LIGHTS){const dx=wx-lt.x,dy=wy-l
   L -= (DARKNESS||0);
   return L>1.6?1.6:(L<0?0:L);}
 
+const _lcS=[1,1,1];   // reused scratch for lightColorAt — avoids ~65k array allocations/frame in the floor cast
 function lightColorAt(wx,wy){
-  let wr=0,wg=0,wb=0,wsum=0;
-  for(const lt of LIGHTS){ if(!lt.col)continue; const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
-    if(d2>lt.r*lt.r)continue; if(lt._vis&&!lt._vis.has((wx|0)+','+(wy|0)))continue; const w=(1-Math.sqrt(d2)/lt.r)*lt.i;
+  let wr=0,wg=0,wb=0,wsum=0; const _xi=wx|0,_yi=wy|0;
+  const _lb=(_lightGrid&&_xi>=0&&_yi>=0&&_xi<MW&&_yi<MH)?_lightGrid[_yi*MW+_xi]:LIGHTS;
+  if(_lb) for(const lt of _lb){ if(!lt.col)continue; const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
+    if(d2>lt.r*lt.r)continue; if(_lb===LIGHTS && lt._vis && !lt._vis.has(_xi+','+_yi))continue; const w=(1-Math.sqrt(d2)/lt.r)*lt.i;
     wr+=lt.col[0]*w; wg+=lt.col[1]*w; wb+=lt.col[2]*w; wsum+=w; }
   for(const h of HAZARDS){ const dx=wx-h.x,dy=wy-h.y,d2=dx*dx+dy*dy,rr=(h.r+2.5);
     if(d2>rr*rr)continue; if(h._vis&&!h._vis.has((wx|0)+','+(wy|0)))continue; const w=(1-Math.sqrt(d2)/rr)*1.1;
@@ -2743,9 +2810,44 @@ function lightColorAt(wx,wy){
     if(d<9){ const w=_blast*2.0*(1-d/9); wr+=1.0*w; wg+=0.55*w; wb+=0.2*w; wsum+=w; } }   // orange blast glow
   if(_mflash>0.01){ const dx=wx-P.x,dy=wy-P.y,d=Math.sqrt(dx*dx+dy*dy);
     if(d<7){ const w=_mflash*1.4*(1-d/7); wr+=0.95*w; wg+=0.9*w; wb+=0.75*w; wsum+=w; } }   // warm-white muzzle flash
-  if(wsum<0.01) return [1,1,1];
+  if(wsum<0.01){ _lcS[0]=1;_lcS[1]=1;_lcS[2]=1; return _lcS; }
   const sN=Math.min(1,wsum), cr=wr/wsum, cg=wg/wsum, cb=wb/wsum;
-  return [1-(1-cr)*sN, 1-(1-cg)*sN, 1-(1-cb)*sN];
+  _lcS[0]=1-(1-cr)*sN; _lcS[1]=1-(1-cg)*sN; _lcS[2]=1-(1-cb)*sN; return _lcS;
+}
+
+// FUSED per-pixel light sample — the floor/ceiling/wall cast needs BOTH the light
+// intensity (lightAt) and the light colour (lightColorAt) at the same point. Those
+// were two separate passes over the same light bucket with two sqrt()s per light.
+// This does one pass: returns the intensity L and writes the colour into _lcS, exactly
+// reproducing both originals (same clamps, same transient gating asymmetry — intensity
+// is _pvisible/los-gated, colour is not; same per-source weights). Verified pixel-identical.
+const _CHEMC=[0.5,1.0,0.35], _FIREC=[1.0,0.55,0.2];
+function _lightFull(wx,wy){
+  let L=0, wr=0,wg=0,wb=0,wsum=0; const _xi=wx|0,_yi=wy|0;
+  const _lb=(_lightGrid&&_xi>=0&&_yi>=0&&_xi<MW&&_yi<MH)?_lightGrid[_yi*MW+_xi]:LIGHTS;
+  if(_lb) for(const lt of _lb){ const dx=wx-lt.x,dy=wy-lt.y,d2=dx*dx+dy*dy;
+    if(d2>lt.r*lt.r)continue; if(_lb===LIGHTS && lt._vis && !lt._vis.has(_xi+','+_yi))continue;
+    const fall=1-Math.sqrt(d2)/lt.r;
+    let fl; if(lt.flicker){ const n=Math.sin(T*23+lt.x*7.7)*Math.sin(T*9.3+lt.y*3.1); const g=Math.sin(T*61+lt.x*2.1); fl=(n<-0.55)?0.12:(g<-0.7?0.5:1.0); } else fl=.85+.15*Math.sin(T*11+lt.x*3.1);
+    L+=fall*fall*lt.i*fl;
+    if(lt.col){ const w=fall*lt.i; wr+=lt.col[0]*w; wg+=lt.col[1]*w; wb+=lt.col[2]*w; wsum+=w; } }
+  for(const h of HAZARDS){ const dx=wx-h.x,dy=wy-h.y,d2=dx*dx+dy*dy,rr=(h.r+2.5);
+    if(d2>rr*rr)continue; if(h._vis&&!h._vis.has(_xi+','+_yi))continue;
+    const fall=1-Math.sqrt(d2)/rr; const fk=.7+.3*Math.sin((h.phase||0)*1.7); L+=fall*fall*1.1*fk;
+    const w=fall*1.1, c=(h.fuel==='chem')?_CHEMC:_FIREC; wr+=c[0]*w; wg+=c[1]*w; wb+=c[2]*w; wsum+=w; }
+  if(muzzle>0.01){ const dx=wx-P.x,dy=wy-P.y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<7){ const f=1-d/7; if(_pvisible(wx,wy)) L+=muzzle*1.4*f; const w=muzzle*1.4*f; wr+=1.0*w; wg+=0.9*w; wb+=0.6*w; wsum+=w; } }
+  if(_blast>0.01){ const dx=wx-_blastX,dy=wy-_blastY,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<9){ const f=1-d/9; if(los(_blastX,_blastY,wx+0.001,wy+0.001)) L+=_blast*2.1*f; const w=_blast*2.0*f; wr+=1.0*w; wg+=0.55*w; wb+=0.2*w; wsum+=w; } }
+  if(_mflash>0.01){ const dx=wx-P.x,dy=wy-P.y,d=Math.sqrt(dx*dx+dy*dy);
+    if(d<7){ const f=1-d/7; L+=_mflash*1.5*f; const w=_mflash*1.4*f; wr+=0.95*w; wg+=0.9*w; wb+=0.75*w; wsum+=w; } }
+  if(typeof ATMO!=='undefined'){ const pdx=wx-P.x,pdy=wy-P.y,pd=Math.sqrt(pdx*pdx+pdy*pdy);
+    if(pd<ATMO.torchR && _pvisible(wx,wy)){ const f=1-pd/ATMO.torchR; L+=ATMO.torch*f*f*(0.9+0.1*Math.sin(T*2.3)); }
+    L-=ATMO.dark; }
+  L-=(DARKNESS||0);
+  if(wsum<0.01){ _lcS[0]=1;_lcS[1]=1;_lcS[2]=1; }
+  else { const sN=Math.min(1,wsum), cr=wr/wsum, cg=wg/wsum, cb=wb/wsum; _lcS[0]=1-(1-cr)*sN; _lcS[1]=1-(1-cg)*sN; _lcS[2]=1-(1-cb)*sN; }
+  return L>1.6?1.6:(L<0?0:L);
 }
 
 function solid(x,y){const xi=x|0,yi=y|0;const c=(x>=0&&y>=0&&x<MW&&y<MH)?grid[yi][xi]:1;
@@ -2858,8 +2960,8 @@ function render(){
     let fg=(rowDist-fogStart)/(fogEnd-fogStart);fg=fg<0?0:fg>1?1:fg;
     // FULLY-FOGGED ROW: skip all per-pixel decal/blood/light work — just fill fog.
     if(fg>=0.999){ const cy0=(yc>=0&&yc<halfH&&!_skyMode); for(let x=0;x<W;x++){ px32[y*W+x]=_FOGPACK; if(cy0)px32[yc*W+x]=_FOGPACK; } continue; }
-    for(let x=0;x<W;x++){const chk=(((wx|0)+(wy|0))&1),lit=lightAt(wx,wy);const fl=0.55+0.85*lit;
-      const lc=lightColorAt(wx,wy);
+    for(let x=0;x<W;x++){const chk=(((wx|0)+(wy|0))&1),lit=_lightFull(wx,wy);const fl=0.55+0.85*lit;
+      const lc=_lcS;
       let fr=floor[0]*(chk?1:.82)*fl*lc[0],fgc=floor[1]*(chk?1:.82)*fl*lc[1],fb=floor[2]*(chk?1:.82)*fl*lc[2];
       // SPATIAL GRID: look up only the decals/pools in THIS tile (flat integer index,
       // no allocation). The floor cast was O(pixels × objects); now it's O(pixels).
@@ -2905,8 +3007,8 @@ function render(){
     // floor cell on the VIEWER's side — step back along the ray — so a face only
     // lights when the light actually shares that side of the wall.
     const _lsx=hx-rdx*0.12, _lsy=hy-rdy*0.12;
-    const lit=lightAt(_lsx,_lsy),dir=side===1?0.68:1.0;let fg=(corr-fogStart)/(fogEnd-fogStart);fg=fg<0?0:fg>1?1:fg;
-    const wlc=lightColorAt(_lsx,_lsy);
+    const lit=_lightFull(_lsx,_lsy),dir=side===1?0.68:1.0;let fg=(corr-fogStart)/(fogEnd-fogStart);fg=fg<0?0:fg>1?1:fg;
+    const wlc=_lcS;
     const bloodSeed = wallBlood[mx+','+my+','+side];       // splatter on this wall face?
     const _dkey=mx+','+my+','+side; const dkind = wallDecalDyn[_dkey]||DECALS[_dkey]; const decal = dkind?makeDecal(dkind):null;
     for(let y=Math.max(0,y0);y<Math.min(H,y1);y++){const vfrac=(y-y0)/lh;const v=(vfrac*64)|0,tv=v<0?0:v>63?63:v,ti=(tv*64+tu)*3;
@@ -2955,6 +3057,7 @@ function render(){
   drawScreenFX();
   drawDmgNums();        // floating damage numbers over the world, under the grade
   drawAtmosphere();
+  drawComfortVignette();   // motion-triggered edge darken (anti-nausea) — zero-cost at rest
   drawDamageVignette();
   drawLetterbox();      // cinematic bars — mask vertical peripheral motion (anti motion-sickness)
   drawBossBar();
@@ -3322,6 +3425,19 @@ function drawBossBar(){
   ctx.fillText(BOSS_NAMES[boss.type]||'ABOMINATION', W/2, by+bh+9); ctx.textAlign='left';
   ctx.restore();
 }
+// COMFORT VIGNETTE (anti-nausea) — a soft black edge-darken that fades IN while the player
+// moves/turns and OUT when still. Narrowing the effective view during self-motion cuts
+// peripheral vection (the Fernandes & Feiner dynamic-FOV-restriction result), and because
+// it tracks _moveVig it is invisible and skipped entirely at rest. Center stays fully clear.
+function drawComfortVignette(){
+  const s=(SETTINGS.comfortVig||0)*_moveVig;
+  if(s<=0.004) return;                       // off, or standing still → zero cost
+  const inner=H*(0.30+0.10*(1-s)), outer=H*0.74;   // stronger motion pulls the clear window in a touch
+  const g=ctx.createRadialGradient(W/2,H/2,inner, W/2,H/2,outer);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(1,'rgba(0,0,0,'+(0.82*s).toFixed(3)+')');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
 function drawDamageVignette(){
   const frac=Math.max(0,Math.min(1,(isFinite(P.hp)?P.hp:0)/100));   // NaN-safe (never feed NaN alpha to a gradient)
   const hurt=1-frac;                              // 0 healthy .. 1 near death
@@ -3348,6 +3464,7 @@ let bobPhase=0, moving=false, pitch=0;   // pitch = y-shear look up/down (px); 0
 let recoilPitch=0, lookPitch=0;           // camera KICKBACK (fire jolt) + manual look pitch; render shear = sum
 let _pumpSndT=0, _pumpShotCd=0.95, _pumpSlide=0;   // shotgun pump-action: rack sound + fore-end slide between shots
 let _vmSway=0, _aPrev=0;                   // viewmodel GUN TRAVEL — lateral lag as you turn
+let _moveVig=0, _cvPrevA=0;                 // COMFORT VIGNETTE — smoothed self-motion energy (move+turn); drives the anti-nausea edge darken
 /* ================= VIEWMODEL =================
    Layer order is the whole trick: back forearm -> weapon body -> support hand
    ON TOP of the fore-end. The overlap is what reads as depth. No projection.
@@ -5859,7 +5976,7 @@ function hitEnemy(e,amount,dtype){
   // Enemy variants (tank/fast) will tune these; Patient defaults ~1.
   const mult={bullet:1.0, pellet:1.0, melee:1.1, explosive:1.4, fire:1.0}[dtype||'bullet']||1;
   amount*=mult * (e.dmgMult&&e.dmgMult[dtype]!=null?e.dmgMult[dtype]:1);
-  if(!(typeof MP!=='undefined'&&MP.active) && DIFF && DIFF.pdmg) amount*=DIFF.pdmg;   // SP difficulty: your shots hit harder on easier settings
+  if(!(typeof MP!=='undefined'&&MP.active)){ if(DIFF&&DIFF.pdmg) amount*=DIFF.pdmg; if(typeof PK!=='undefined') amount*=PK.dmg; }   // SP: difficulty + DEADEYE perk
   if(MP.active&&MP.mode==='zombies'){ if(MP.papMul>1)amount*=MP.papMul; if(e.hp>0)MP.points+=10; }
   // WARDEN: front shield. If the player is within the shield arc of the way the
   // warden faces, most damage is blocked — you must flank it. (the toolbox enemy)
@@ -5902,7 +6019,7 @@ function killEnemy(e, dtype, finisher){
   const d=Math.hypot(e.x-P.x,e.y-P.y);
   if(finisher){
     // FINISHER: big health chunk + a spray of extra gore (bloodbath payoff)
-    const heal=18+Math.round(12*(1-P.hp/100));   // heals more when you're hurt
+    const heal=Math.round((18+Math.round(12*(1-P.hp/100)))*(typeof PK!=='undefined'?PK.finHeal:1));   // heals more when hurt; BUTCHER perk boosts it
     P.hp=Math.min(100,P.hp+heal); document.getElementById('hp').textContent=P.hp|0;
     for(let k=0;k<3;k++) spawnBlood(e);
     flashOnce&&flashOnce('fin','FINISHED',600);
@@ -5955,8 +6072,8 @@ function pickups(){
             if(at){ ammo[at]=(ammo[at]|0)+it.amt; ensureClip(curWeapon); updateWeaponHUD();
               SFX.pickup&&SFX.pickup(); flash('+'+it.amt+' '+w.name+' AMMO',1400); }
             else { SFX.pickup&&SFX.pickup(); }   // holding a melee weapon — box still consumed
-          } else { ammo[it.sub]=(ammo[it.sub]|0)+it.amt; updateWeaponHUD();
-            SFX.pickup&&SFX.pickup(); flash('+'+it.amt+' '+it.sub.toUpperCase()+' AMMO',1400); } }
+          } else { const _amt=Math.round(it.amt*(typeof PK!=='undefined'?PK.pickup:1)); ammo[it.sub]=(ammo[it.sub]|0)+_amt; updateWeaponHUD();   // SCAVENGER perk
+            SFX.pickup&&SFX.pickup(); flash('+'+_amt+' '+it.sub.toUpperCase()+' AMMO',1400); } }
       else if(it.kind==='grenade'){ grenades+=(it.amt||2); const g=document.getElementById('gren'); if(g)g.textContent=grenades; SFX.pickup&&SFX.pickup(); flash('+GRENADES',1200); }
       else if(it.kind==='health'){ if(P.hp>=100)continue; P.hp=Math.min(100,P.hp+it.amt);
           document.getElementById('hp').textContent=P.hp|0; SFX.pickup&&SFX.pickup();
@@ -6512,9 +6629,9 @@ function hurtPlayer(amount, dot, noFlash){
   if(dead||won)return;
   if(!isFinite(amount)||amount<=0) return;   // damage only — never heal or NaN the player's HP
   if(typeof levelIdx!=='undefined' && levelIdx<2) amount*=0.7;   // easier start: enemies hit softer on the first two campaign floors (arenas/zombies use a high level index, so unaffected)
-  if(!(typeof MP!=='undefined'&&MP.active) && DIFF) amount*=DIFF.edmg;   // SP difficulty scales enemy damage to the player
+  if(!(typeof MP!=='undefined'&&MP.active)){ if(DIFF) amount*=DIFF.edmg; if(typeof PK!=='undefined') amount*=PK.dmgTaken; }   // SP: difficulty + IRONCLAD perk
   if(MP.active){ if(T<(MP.spawnGrace||0))return; P.hp-=amount; document.getElementById('hp').textContent=Math.max(0,P.hp|0); const _f=document.getElementById('flash'); if(noFlash){} else if(dot){_f.style.background='radial-gradient(circle,rgba(255,90,20,0.35),transparent 70%)';_f.style.opacity=0.6;} else {_f.style.opacity=0.5;setTimeout(()=>_f.style.opacity=0,80);} if(!dot&&amount>5&&typeof addBloodSplat==='function')addBloodSplat(amount>14?3:1); if(!dot&&SFX.playerHurt)SFX.playerHurt(); if(P.hp<=0&&!MP.dead)MP.die({from:'Z',fromName:'the swarm'}); return; }
-  P.hp-=amount; document.getElementById('hp').textContent=Math.max(0,P.hp|0);
+  P.hp-=amount; P._hurtT=T; document.getElementById('hp').textContent=Math.max(0,P.hp|0);
   if(typeof bloodLens!=='undefined') bloodLens=Math.min(1,bloodLens+amount/40);
   if(!dot && amount>5) addBloodSplat(amount>14?3:1);   // visceral lens blood on a real hit
   const f=document.getElementById('flash');
@@ -7362,6 +7479,9 @@ let menuVisible=true;   // a full menu (main/lobby/post) is up -> don't render t
 function step(dt){
   if(typeof pausedUI!=='undefined' && pausedUI && !(typeof MP!=='undefined'&&MP.active)) return;  // SP pause freezes the sim; MP keeps running
   if(!running)return;
+  // RESILIENCE perk — slow out-of-combat regen (SP)
+  if(typeof PK!=='undefined' && PK.regen>0 && !(typeof MP!=='undefined'&&MP.active) && !dead && !won && P.hp>0 && P.hp<100 && T-(P._hurtT||-9)>4){
+    P.hp=Math.min(100, P.hp+PK.regen*5*dt); const _h=document.getElementById('hp'); if(_h)_h.textContent=P.hp|0; }
   tickReload();
   if(_pumpSndT && T>=_pumpSndT){ _pumpSndT=0; if(typeof SFX!=='undefined'&&SFX.pump)SFX.pump(); }   // shotgun rack
   // camera kickback springs back to centre; feeds the world y-shear (pitch)
@@ -7369,6 +7489,11 @@ function step(dt){
   // viewmodel lateral sway — the gun lags as you swing your view, then settles
   { let da=P.a-_aPrev; while(da>Math.PI)da-=6.283; while(da<-Math.PI)da+=6.283; _aPrev=P.a;
     const tgt=Math.max(-40,Math.min(40, -da*360)); _vmSway+=(tgt-_vmSway)*Math.min(1,dt*9); if(Math.abs(_vmSway)<0.1)_vmSway=0; }
+  // COMFORT VIGNETTE motion energy — rises while moving or turning, decays to 0 at rest
+  // (so the edge-darken is only present exactly when self-motion vection is generated).
+  { let dca=P.a-_cvPrevA; while(dca>Math.PI)dca-=6.283; while(dca<-Math.PI)dca+=6.283; _cvPrevA=P.a;
+    const _tgtVig=Math.max(moving?1:0, Math.min(1, Math.abs(dca)/0.05));
+    _moveVig += (_tgtVig-_moveVig)*Math.min(1, dt*(_tgtVig>_moveVig?16:6)); if(_moveVig<0.004)_moveVig=0; }
   if(fireCd>0)fireCd-=dt; if(muzzle>0)muzzle-=dt*6; if(recoil>0)recoil-=dt*6;
   if(_blast>0)_blast-=dt*4.5;   // explosion flash fades fast
   if(_mflash>0)_mflash-=dt*9;   // muzzle flash fades very fast (one-two frames)
@@ -7380,7 +7505,8 @@ function step(dt){
     if(P.stunT>0)P.stunT-=dt;                                   // Shepherd's bell toll slows you briefly
     const stunM=(P.stunT>0)?0.42:1;
     const wpnM=(WEAPONS[curWeapon]&&WEAPONS[curWeapon].moveSlow)||1;   // LMG etc. slow your move
-    const spd=2.6*dt*stunM*wpnM;let mvF=0,mvS=0;
+    const _fleet=(!(typeof MP!=='undefined'&&MP.active)&&typeof PK!=='undefined')?PK.speed:1;   // FLEET FOOT perk (SP)
+    const spd=2.6*dt*stunM*wpnM*_fleet;let mvF=0,mvS=0;
     if(keys['w']||keys['arrowup'])mvF+=1; if(keys['s']||keys['arrowdown'])mvF-=1;
     if(keys['a'])mvS-=1; if(keys['d'])mvS+=1;
     // SMOOTHED keyboard turn: ease the turn rate in/out instead of snapping, and a
@@ -7418,7 +7544,7 @@ function step(dt){
       const pMax=H*0.42;
       if(pt){ lookPitch+=pt*H*1.6*dt; } else { lookPitch*=Math.pow(0.0001,dt); if(Math.abs(lookPitch)<0.5)lookPitch=0; }
       lookPitch=Math.max(-pMax,Math.min(pMax,lookPitch));
-      pitch=(lookPitch+recoilPitch)|0; }   // final shear = manual look + fire kickback
+      pitch=(lookPitch+recoilPitch*MOTION)|0; }   // final shear = manual look + fire kickback (kickback scaled by comfort MOTION so 0 = none)
     updateEnemies(dt); updateProjectiles(dt); updateNades(dt);
     updateAmbientSound(dt);
     updateMusic(dt);
@@ -8276,6 +8402,8 @@ let _cutSeen={};   // only auto-play a floor's lead-in once per session run
 function _beginAtNow(lvl){
   document.getElementById('tap').style.display='none';
   menuVisible=false;
+  if(typeof computePerks==='function') computePerks();
+  if(typeof PK!=='undefined' && lvl===0){ grenades=3+PK.nades; const g=document.getElementById('gren'); if(g)g.textContent=grenades; }  // DEMOLITION perk: extra starting grenades
   loadLevel(lvl); running=true; last=performance.now();
   assertSafeStart(); initAudio(); if(AC&&AC.state==='suspended')AC.resume(); startGameMusic();
 }
@@ -8326,7 +8454,7 @@ document.getElementById('btnPauseLeave').onclick=()=>{ pausedUI=false;
   _show('mainmenu');
 };
 // ---- MAIN MENU routing: CAMPAIGN vs MULTIPLAYER (shared engine, one file) ----
-const _show=(id)=>{ menuVisible=true; for(const c of ['mainmenu','tap','mplobby','settings','profile','gunsmith','mpsetup','mpbrowse','mpselect','mplobbyscreen','mppost']){ const el=document.getElementById(c); if(el)el.style.display = (c===id)?'flex':'none'; } const _mh=document.getElementById('mphud'); if(_mh)_mh.style.display='none'; };
+const _show=(id)=>{ menuVisible=true; for(const c of ['mainmenu','tap','mplobby','settings','profile','perks','gunsmith','mpsetup','mpbrowse','mpselect','mplobbyscreen','mppost']){ const el=document.getElementById(c); if(el)el.style.display = (c===id)?'flex':'none'; } const _mh=document.getElementById('mphud'); if(_mh)_mh.style.display='none'; };
 // ===================== MULTIPLAYER MODULE =====================
 /* ══════════════════════════════════════════════════════════════════════════
    MULTIPLAYER — Firebase Realtime Database, shared engine, single file.
@@ -9934,6 +10062,22 @@ function renderProfile(){ const lv=levelOf(PROFILE.xp), base=150*(lv-1)*(lv-1), 
   document.getElementById('prof_stats').innerHTML='KILLS '+PROFILE.kills+'   \u00b7   DEATHS '+PROFILE.deaths+'   \u00b7   WINS '+PROFILE.wins+'   \u00b7   BEST WAVE '+PROFILE.bestWave;
   document.getElementById('prof_chals').innerHTML='<div style="color:#c33;letter-spacing:2px;margin:6px 0 4px">TODAY\'S CHALLENGES</div>'+(PROFILE.chals||[]).map(c=>'<div style="margin:3px 0;color:'+(c.done?'#5d8':'#ccc')+'">'+(c.done?'\u2713 ':'\u2022 ')+c.desc+' <span style="color:#888">('+Math.min(c.prog,c.goal)+'/'+c.goal+')  +'+c.xp+'XP</span></div>').join(''); }
 document.getElementById('btnProfile').onclick=()=>{ renderProfile(); _show('profile'); };
+// ── PERKS screen ──
+function buyPerk(id){ const pk=PERKS.find(p=>p.id===id); if(!pk)return; if(perkPts()<=0)return; if(perkLvl(id)>=pk.max)return;
+  if(!PROFILE.perks)PROFILE.perks={}; PROFILE.perks[id]=(PROFILE.perks[id]|0)+1; computePerks(); saveProfile(); renderPerks(); }
+function renderPerks(){ const pts=perkPts(); const pe=document.getElementById('perk_pts'); if(pe)pe.textContent='POINTS: '+pts+'   (LVL '+levelOf(PROFILE.xp)+')';
+  const grid=document.getElementById('perk_grid'); if(!grid)return; grid.innerHTML='';
+  for(const pk of PERKS){ const lv=perkLvl(pk.id), maxed=lv>=pk.max, can=pts>0&&!maxed;
+    const card=document.createElement('div'); card.style.cssText='width:142px;text-align:left;background:#15131a;border:1px solid '+(lv>0?'#8a6a2a':'#332c3a')+';border-radius:6px;padding:8px 10px';
+    const pips=Array.from({length:pk.max},(_,i)=>i<lv?'●':'○').join('');
+    card.innerHTML='<div style="color:#fd6;font-size:12px;letter-spacing:1px;font-weight:bold">'+pk.name+'</div>'
+      +'<div style="color:#8a9098;font-size:10px;line-height:1.3;margin:3px 0;height:26px">'+pk.desc+(pk.max>1?' (per rank)':'')+'</div>'
+      +'<div style="color:#c93;font-size:11px;letter-spacing:3px">'+pips+'</div>';
+    const btn=document.createElement('button'); btn.textContent=maxed?'MAXED':(can?'UPGRADE':'LOCKED'); btn.style.cssText='font-size:10px;padding:4px 10px;margin-top:5px;width:100%'; btn.disabled=!can; if(!can)btn.style.opacity='0.4';
+    btn.onclick=()=>buyPerk(pk.id); card.appendChild(btn); grid.appendChild(card); }
+}
+document.getElementById('btnPerks').onclick=()=>{ renderPerks(); _show('perks'); };
+document.getElementById('perkback').onclick=()=>{ renderProfile(); _show('profile'); };
 document.getElementById('profback').onclick=()=>{ saveProfile(); _show('mainmenu'); };
 
 // ── GUNSMITH screen ──
@@ -9993,6 +10137,36 @@ _sn('sQual').oninput=e=>{ SETTINGS.quality=(+e.target.value)/100; _sn('vQual').t
 _sn('sMotion').oninput=e=>{ SETTINGS.motion=(+e.target.value)/100; _sn('vMotion').textContent=e.target.value+'%'; applySettings(); };
 _sn('sLetter').oninput=e=>{ SETTINGS.letterbox=(+e.target.value)/100; _sn('vLetter').textContent=e.target.value+'%'; applySettings(); };
 if(_sn('sReduceFx')){ _sn('sReduceFx').checked=!!SETTINGS.reduceFlash; _sn('sReduceFx').onchange=e=>{ SETTINGS.reduceFlash=e.target.checked; applySettings(); }; }
+// FOV + comfort vignette
+if(_sn('sFov'))  _sn('sFov').oninput =e=>{ SETTINGS.fov=+e.target.value; _sn('vFov').innerHTML=e.target.value+'&deg;'; applySettings(); };
+if(_sn('sCvig')) _sn('sCvig').oninput=e=>{ SETTINGS.comfortVig=(+e.target.value)/100; _sn('vCvig').textContent=e.target.value+'%'; applySettings(); };
+// ── SETTINGS persistence (localStorage) so comfort choices stick between sessions ──
+function saveSettings(){ try{ localStorage.setItem('crashout_settings', JSON.stringify(SETTINGS)); }catch(e){} }
+function syncSettingsUI(){
+  const set=(id,val,lab)=>{ const el=_sn(id); if(el)el.value=val; if(lab!=null){ const l=_sn('v'+id.slice(1)); if(l)l.innerHTML=lab; } };
+  set('sSens', Math.round(SETTINGS.sens/0.00025), (SETTINGS.sens/0.0025).toFixed(1));
+  set('sMusic', Math.round(SETTINGS.music*100), Math.round(SETTINGS.music*100)+'%');
+  set('sSfx', Math.round(SETTINGS.sfx*100), Math.round(SETTINGS.sfx*100)+'%');
+  set('sQual', Math.round(SETTINGS.quality*100), ({ '50':'Low','75':'Medium','100':'High','125':'Ultra','150':'Ultra+' }[''+Math.round(SETTINGS.quality*100)]||'High'));
+  set('sMotion', Math.round(SETTINGS.motion*100), Math.round(SETTINGS.motion*100)+'%');
+  set('sLetter', Math.round(SETTINGS.letterbox*100), Math.round(SETTINGS.letterbox*100)+'%');
+  set('sFov', SETTINGS.fov|0, (SETTINGS.fov|0)+'&deg;');
+  set('sCvig', Math.round((SETTINGS.comfortVig||0)*100), Math.round((SETTINGS.comfortVig||0)*100)+'%');
+  const rf=_sn('sReduceFx'); if(rf)rf.checked=!!SETTINGS.reduceFlash;
+}
+// persist on release of any slider / toggle
+['sSens','sMusic','sSfx','sQual','sMotion','sLetter','sFov','sCvig'].forEach(id=>{ const el=_sn(id); if(el)el.addEventListener('change',saveSettings); });
+if(_sn('sReduceFx')) _sn('sReduceFx').addEventListener('change',saveSettings);
+// ── ONE-CLICK COMFORT PRESETS ──
+const COMFORT_PRESETS={
+  off:     {fov:90, motion:1.0, letterbox:0.0,  comfortVig:0.0, reduceFlash:false},   // max visuals, no aids
+  reduced: {fov:75, motion:0.4, letterbox:0.1,  comfortVig:0.4, reduceFlash:false},   // balanced
+  comfort: {fov:70, motion:0.0, letterbox:0.14, comfortVig:0.8, reduceFlash:true}     // maximum anti-nausea
+};
+function applyComfortPreset(k){ const p=COMFORT_PRESETS[k]; if(!p)return; Object.assign(SETTINGS,p); applySettings(); syncSettingsUI(); saveSettings(); }
+[...document.querySelectorAll('#comfortsel .cfbtn')].forEach(btn=>{ btn.onclick=()=>applyComfortPreset(btn.dataset.cf); });
+// load saved settings on boot, apply + reflect into the UI
+(function(){ try{ const j=localStorage.getItem('crashout_settings'); if(j) Object.assign(SETTINGS, JSON.parse(j)); }catch(e){} applySettings(); syncSettingsUI(); })();
 let _mpMode='dm', _mpArena=0, _mpSkin=(PROFILE.skin||'operator'), _mpAccent=(PROFILE.accent||'gold'), _selView=0, _selIv=0, _selFrom='setup';
 function _openSetup(){
   document.getElementById('mpsetup_mode').textContent='MULTIPLAYER';
